@@ -132,7 +132,7 @@ Tous les tests tournent sur une base MongoDB jetable (`npm run seed`, 21 349 fil
 
 | Workflow | Déclenchement | Contenu | Durée |
 | --- | --- | --- | --- |
-| `movies-load-test.yml` | chaque push touchant ce dossier | build, types, seuils anti-régression (`load:max`, 10 s par route) | ~1 min 30 |
+| `movies-load-test.yml` | chaque push touchant ce dossier | build, types, seuils anti-régression (`load:max`, 10 s par route), paliers courts (5 → 800 VUs, 10 s) | ~2 min 30 |
 | `movies-bilan-charge.yml` | manuel (base jetable ou Atlas) et chaque lundi 6 h 43 | progressif, débit maximal, rupture, paliers | ~8 min |
 | `perf-suivi.yml` | manuel (charge au choix) et en semaine à 7 h 17 | TP : mesure de `GET /movies` + tickets GitHub Issues | ~3 min |
 

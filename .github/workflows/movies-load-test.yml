@@ -1,8 +1,8 @@
 name: "movies-api-loadtest : tests de charge k6"
 
-# CI rapide (~1 min 30) à chaque push touchant movies-api-loadtest/ : build, vérification des types,
-# puis seuils anti-régression (débit maximal, 10 s par route) sur une base MongoDB jetable.
-# Le bilan complet (progressif, rupture, paliers) est dans movies-bilan-charge.yml.
+# CI rapide (~2 min 30) à chaque push touchant movies-api-loadtest/ : build, vérification des types,
+# seuils anti-régression (débit maximal, 10 s par route) et paliers courts, sur une base MongoDB jetable.
+# Le bilan complet (progressif, rupture, paliers longs) est dans movies-bilan-charge.yml.
 on:
   push:
     paths:
@@ -76,12 +76,22 @@ jobs:
         continue-on-error: true
         run: npm run -s load:max -- --quiet -e SECONDS=10 2>&1 | tee k6-max.txt
 
+      # Le premier palier en échec est le résultat attendu ; seule une erreur technique fait échouer l'étape.
+      - name: Paliers courts (5 → 800 utilisateurs virtuels, 10 s chacun)
+        id: paliers
+        continue-on-error: true
+        env:
+          PALIERS: "5 50 200 400 800"
+        run: npm run -s load:paliers -- -e DURATION=10s
+
       - name: Résumé dans la page du run
         if: always()
         run: |
           {
             echo "## Seuils anti-régression k6 — base MongoDB jetable (CI)"
-            echo "Bilan complet (progressif, rupture, paliers) : workflow *bilan de charge complet*, lancement manuel ou chaque lundi."
+            echo "Bilan complet (progressif, rupture, paliers longs) : workflow *bilan de charge complet*, lancement manuel ou chaque lundi."
+            [ -f load-tests/reports/paliers.md ] && cat load-tests/reports/paliers.md
+            echo "### Seuils anti-régression"
             if [ -f k6-max.txt ]; then
               echo '```'
               sed -n '/█ THRESHOLDS/,/█ TOTAL RESULTS/p' k6-max.txt | sed '$d'
@@ -101,11 +111,11 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      # Le job échoue si un seuil casse (régression), une fois les rapports enregistrés.
+      # Le job échoue si un seuil anti-régression casse ou si les paliers plantent, une fois les rapports enregistrés.
       - name: Verdict
-        if: steps.max.outcome == 'failure'
+        if: steps.max.outcome == 'failure' || steps.paliers.outcome == 'failure'
         run: |
-          echo "::error::Régression de performance : au moins un seuil anti-régression est dépassé (voir le résumé)."
+          echo "::error::Régression de performance ou erreur technique pendant les tests (voir le résumé et les rapports)."
           exit 1
 
   # Baromètre W/L : historique des derniers runs, affiché dans le résumé (lecture seule de l'historique Actions).
