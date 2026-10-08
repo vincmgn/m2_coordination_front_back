@@ -13,6 +13,12 @@ const router = createRouter({
       component: () => import('@/views/MovieForm.vue'),
       props: true,
     },
+    {
+      path: '/seances/:id',
+      name: 'screening',
+      component: () => import('@/views/SeatBooking.vue'),
+      props: true,
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),

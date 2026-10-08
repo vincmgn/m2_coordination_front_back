@@ -18,6 +18,15 @@ export default defineConfig({
       '/api': {
         target: process.env.API_URL ?? 'http://localhost:3000',
         rewrite: (path) => path.replace(/^\/api/, ''),
+        // Flux SSE : si l'API coupe la connexion (arrêt, crash), le proxy doit couper aussi celle du navigateur.
+        // Sans cela, l'onglet garde un flux « ouvert » mais muet et ne détecte jamais la panne.
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, _req, res) => {
+            proxyRes.on('close', () => {
+              if (!res.writableEnded) res.destroy()
+            })
+          })
+        },
       },
     },
   },

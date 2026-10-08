@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ObjectId, type Filter } from "mongodb";
 import { getDB } from "../db.js";
+import { HttpError } from "../http-error.js";
 
 interface Movie {
   title: string;
@@ -23,15 +24,6 @@ const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 
 const movies = () => getDB().collection<Movie>("movies");
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
 
 const notFound = () => new HttpError(404, "Film introuvable");
 

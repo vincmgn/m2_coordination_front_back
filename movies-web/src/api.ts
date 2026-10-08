@@ -46,6 +46,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly body: Record<string, unknown> | null = null,
   ) {
     super(message)
   }
@@ -59,7 +60,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T
 
   const body = await res.json().catch(() => null)
-  if (!res.ok) throw new ApiError(res.status, body?.error ?? `Erreur HTTP ${res.status}`)
+  if (!res.ok) throw new ApiError(res.status, body?.error ?? `Erreur HTTP ${res.status}`, body)
   return body as T
 }
 
@@ -82,3 +83,42 @@ export const updateMovie = (id: string, changes: Partial<MovieInput>) =>
   request<Movie>(`/movies/${id}`, { method: 'PUT', body: JSON.stringify(changes) })
 
 export const deleteMovie = (id: string) => request<void>(`/movies/${id}`, { method: 'DELETE' })
+
+// --- Séances et réservation de places ---------------------------------------------------------
+
+export interface Screening {
+  id: string
+  date: string // AAAA-MM-JJ (heure de Paris)
+  time: string // HH:MM
+  capacity: number
+  available: number
+}
+
+export interface ScreeningDetail {
+  id: string
+  date: string
+  time: string
+  movie: Pick<Movie, '_id' | 'title' | 'year' | 'poster' | 'runtime'>
+  room: { rows: string[]; seatsPerRow: number; capacity: number }
+  taken: string[]
+}
+
+export interface Booking {
+  bookingId: string
+  screeningId: string
+  seats: string[]
+  name: string
+}
+
+export const listScreenings = (movieId: string) => request<Screening[]>(`/screenings?movieId=${movieId}`)
+
+export const getScreening = (id: string) => request<ScreeningDetail>(`/screenings/${id}`)
+
+export const reserveSeats = (id: string, seats: string[], name: string) =>
+  request<Booking>(`/screenings/${id}/reservations`, { method: 'POST', body: JSON.stringify({ seats, name }) })
+
+export const cancelBooking = (id: string, bookingId: string) =>
+  request<void>(`/screenings/${id}/reservations/${bookingId}`, { method: 'DELETE' })
+
+// Flux SSE de la séance : URL à passer à EventSource (même préfixe /api que les autres appels).
+export const screeningEventsUrl = (id: string) => `${BASE_URL}/screenings/${id}/events`

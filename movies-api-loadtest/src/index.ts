@@ -2,6 +2,7 @@ import "dotenv/config";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { connectDB, closeDB } from "./db.js";
 import moviesRouter from "./routes/movies.js";
+import screeningsRouter, { ensureScreeningIndexes } from "./routes/screenings.js";
 
 type AppError = Error & { status?: number; type?: string };
 
@@ -32,11 +33,17 @@ app.get("/", (_req: Request, res: Response) => {
       { method: "POST", path: "/movies", description: "Créer un film (title obligatoire)" },
       { method: "PUT", path: "/movies/:id", description: "Modifier les champs envoyés" },
       { method: "DELETE", path: "/movies/:id", description: "Supprimer un film" },
+      { method: "GET", path: "/screenings?movieId=", description: "Séances à venir d'un film et places libres" },
+      { method: "GET", path: "/screenings/:id", description: "Plan de salle et sièges réservés" },
+      { method: "GET", path: "/screenings/:id/events", description: "Flux SSE : sièges réservés / libérés en direct" },
+      { method: "POST", path: "/screenings/:id/reservations", description: "Réserver des sièges { seats, name }" },
+      { method: "DELETE", path: "/screenings/:id/reservations/:bookingId", description: "Annuler une réservation" },
     ],
   });
 });
 
 app.use("/movies", moviesRouter);
+app.use("/screenings", screeningsRouter);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: `Route introuvable : ${req.method} ${req.path}` });
@@ -57,6 +64,7 @@ const PORT = Number(process.env.PORT) || 3000;
 
 try {
   await connectDB();
+  await ensureScreeningIndexes();
 } catch (err) {
   console.error("Connexion à MongoDB impossible :", (err as Error).message);
   process.exit(1);

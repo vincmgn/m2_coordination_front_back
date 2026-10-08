@@ -44,6 +44,36 @@ npm run typecheck  # vérification des types sans compiler
 - La liste ne renvoie que `_id`, `title`, `year`, `genres`, `imdb.rating` et `poster`.
 - Erreurs au format `{ "error": "message" }` : 400 (id ou données invalides), 404 (film ou route absents), 500.
 
+## Réservation de places en temps réel (SSE)
+
+Équivalent cinéma des créneaux MediSlot : un **siège d'une séance** se réserve une seule fois. Chaque film a des séances calculées (14 h, 17 h 30, 21 h sur 3 jours, heure de Paris) dans une salle de 8 rangées × 12 sièges ; seules les réservations sont stockées (collection `reservations`).
+
+| Méthode | Route | Description |
+| --- | --- | --- |
+| GET | `/screenings?movieId=<id>` | Séances à venir et places libres |
+| GET | `/screenings/:id` | Plan de salle et sièges réservés (lecture relue après chaque notification) |
+| GET | `/screenings/:id/events` | Flux SSE (`text/event-stream`) |
+| POST | `/screenings/:id/reservations` | `{ "seats": ["C7","C8"], "name": "Alice" }` → 201, **409 si un siège est déjà pris**, 404, 400 |
+| DELETE | `/screenings/:id/reservations/:bookingId` | Annule la réservation (libère ses sièges) → 204 |
+
+**Contrat du flux** (`id:` incrémental, `retry: 2000`) :
+
+| Événement | Données | Effet côté front |
+| --- | --- | --- |
+| `ready` | `{"action":"reload"}` à chaque abonnement (donc après une reconnexion) | relit `GET /screenings/:id` |
+| `seat-updated` | `screeningId`, `seats`, `status` (`BOOKED` / `AVAILABLE`) | relit `GET /screenings/:id` |
+| `viewers` | nombre de navigateurs abonnés à la séance | affichage |
+| `: keepalive` | commentaire toutes les 15 s | aucun |
+
+- **MongoDB conserve, l'API décide, SSE informe, Vue actualise** : l'index unique `(screeningId, seat)` refuse la double réservation (20 clics simultanés sur un siège → 1 × 201, 19 × 409) ; l'événement n'est émis qu'**après** l'écriture réussie ; une réservation multi-sièges est « tout ou rien ».
+- Le flux ne contient **ni nom ni bookingId** : seule la réponse du POST confirme une réservation personnelle.
+- Pas de journal de replay : après une coupure, `ready` déclenche la relecture de l'état actuel. Le front ajoute une relecture de secours toutes les 30 s.
+- Diffusion en mémoire (`EventEmitter`) : valable pour une seule instance de l'API.
+
+```bash
+curl -N http://localhost:3000/screenings/<id de séance>/events   # observer le flux
+```
+
 ## Exemples
 
 ```bash

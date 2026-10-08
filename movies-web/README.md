@@ -5,6 +5,7 @@ Front Vue 3 + TypeScript + Vite pour l'API [`movies-api-loadtest`](../movies-api
 - **Liste** : grille d'affiches, recherche par titre, filtres année et genre, pagination. Les filtres sont gardés dans l'URL.
 - **Détail** d'un film, avec modification et suppression.
 - **Formulaire** de création et de modification.
+- **Réservation de places** (`/seances/:id`) : plan de salle synchronisé en temps réel par SSE entre tous les onglets ouverts (voir le README de l'API pour le contrat du flux). Pour tester : ouvrir la même séance dans deux onglets, réserver dans l'un, l'autre se met à jour sans rechargement.
 
 ## Lancement
 

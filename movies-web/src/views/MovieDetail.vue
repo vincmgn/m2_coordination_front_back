@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { deleteMovie, getMovie, type Movie } from '@/api'
 import MoviePoster from '@/components/MoviePoster.vue'
+import ScreeningPicker from '@/components/ScreeningPicker.vue'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
@@ -95,6 +96,8 @@ const list = (values?: string[]) => values?.filter(Boolean).join(', ')
           {{ deleting ? 'Suppression…' : 'Supprimer' }}
         </button>
       </div>
+
+      <ScreeningPicker :movie-id="movie._id" />
     </div>
   </article>
 </template>
