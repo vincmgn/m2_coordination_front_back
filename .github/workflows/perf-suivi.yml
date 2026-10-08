@@ -1,0 +1,189 @@
+name: "Suivi des performances (TP k6 + GitHub Issues)"
+
+# Lecture mesurée : GET /movies (load-tests/paliers.ts), seuils du TP : p95 < 500 ms, erreurs < 1 %, checks 100 %.
+on:
+  # Lancement manuel (onglet Actions > Run workflow), avec la charge choisie : essais A à D.
+  workflow_dispatch:
+    inputs:
+      vus:
+        description: "Nombre d'utilisateurs virtuels (charge initiale : 5)"
+        type: number
+        required: true
+        default: 5
+  # Lancement programmé : du lundi au vendredi à 7 h 17, heure de Paris (essai E).
+  # Minute 17 et non 0 : GitHub retarde davantage les lancements en début d'heure.
+  # Rappels : ne s'exécute que sur la branche par défaut (main), peut être retardé,
+  # et est désactivé après 60 jours sans activité sur un dépôt public.
+  schedule:
+    - cron: "17 7 * * 1-5"
+      timezone: "Europe/Paris"
+
+# Droits minimaux du GITHUB_TOKEN : lecture seule par défaut. Seul le job « publish » peut écrire des tickets,
+# et il ne lance ni l'API ni k6 ni les dépendances npm.
+permissions:
+  contents: read
+
+# Un seul suivi à la fois sur tout le dépôt : les lancements suivants attendent au lieu de s'exécuter en parallèle.
+# Deux runs ne peuvent donc jamais publier le même incident en même temps.
+concurrency:
+  group: perf-suivi
+  cancel-in-progress: false
+
+env:
+  # Charge du lancement programmé, définie à l'avance (aucune saisie manuelle).
+  SCHEDULED_VUS: 5
+  DURATION: 1m
+  PERF_ROUTE: "GET /movies?page=<1..50>&limit=20"
+  PERF_SCRIPT: load-tests/paliers.ts
+  SEED_COUNT: 21349
+  MONGODB_URI: mongodb://localhost:27017
+  API_URL: http://localhost:3000
+  REPORTS: load-tests/reports
+
+jobs:
+  perf:
+    # Version figée : même machine d'un run à l'autre, donc mesures comparables.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      result: ${{ steps.result.outputs.result }}
+
+    defaults:
+      run:
+        working-directory: movies-api-loadtest
+
+    # Laboratoire isolé : MongoDB jetable, détruite automatiquement à la fin du job.
+    services:
+      mongo:
+        image: mongo:8.0
+        ports: ["27017:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: movies-api-loadtest/package-lock.json
+
+      - name: Choix de la charge
+        env:
+          INPUT_VUS: ${{ inputs.vus }}
+        run: |
+          # Programmé : charge fixe. Manuel : charge saisie, validée avant usage.
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then VUS=$SCHEDULED_VUS; else VUS=$INPUT_VUS; fi
+          if ! [[ "$VUS" =~ ^[0-9]+$ ]] || [ "$VUS" -lt 1 ] || [ "$VUS" -gt 2000 ]; then
+            echo "::error::Charge invalide : '$VUS' (entier entre 1 et 2000 attendu)."
+            exit 1
+          fi
+          echo "VUS=$VUS" >> "$GITHUB_ENV"
+          echo "Déclenchement : $GITHUB_EVENT_NAME, révision $GITHUB_SHA, charge $VUS utilisateurs virtuels"
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Jeu de données fictif
+        run: npm run seed
+
+      - name: Démarrage de l'API et attente de disponibilité
+        id: api
+        run: |
+          mkdir -p "$REPORTS"
+          nohup npm start > "$REPORTS/server.log" 2>&1 &
+          echo $! > api.pid
+          # Disponible = la route mesurée répond 200 avec des données (pas seulement un port ouvert).
+          for _ in $(seq 1 60); do
+            if curl -sf "$API_URL/movies?limit=1" | grep -q '"total":[1-9]'; then
+              echo "API disponible"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::API non disponible après 60 s."
+          cat "$REPORTS/server.log"
+          exit 1
+
+      # Le code de sortie de k6 est conservé au lieu de faire échouer l'étape : il est interprété juste après.
+      - name: Test k6
+        id: k6
+        if: steps.api.outcome == 'success'
+        env:
+          K6_WEB_DASHBOARD: "true"
+          K6_WEB_DASHBOARD_EXPORT: ${{ env.REPORTS }}/rapport.html
+        run: |
+          set +e
+          scripts/k6.sh run --quiet -e "VUS=$VUS" -e "DURATION=$DURATION" -e "BASE_URL=$API_URL" \
+            --summary-export "$REPORTS/summary.json" "$PERF_SCRIPT" 2>&1 | tee "$REPORTS/k6.txt"
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Analyse du résultat
+        id: result
+        if: always()
+        env:
+          K6_EXIT_CODE: ${{ steps.k6.outputs.exit_code }}
+        run: |
+          node scripts/perf-result.mjs "$REPORTS/summary.json" "$K6_EXIT_CODE" "$REPORTS/result.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "status=$(node -p "require('./$REPORTS/result.json').status")" >> "$GITHUB_OUTPUT"
+          echo "result=$(node -p "JSON.stringify(require('./$REPORTS/result.json'))")" >> "$GITHUB_OUTPUT"
+
+      - name: Arrêt du laboratoire
+        if: always()
+        run: |
+          [ -f api.pid ] && kill "$(cat api.pid)" 2>/dev/null || true
+          echo "API arrêtée ; le conteneur MongoDB est supprimé automatiquement en fin de job."
+
+      # Rapports consultables même après un échec : résumé JSON, résultat interprété, rapport HTML, journaux.
+      - name: Enregistrement des rapports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: perf-suivi-${{ github.run_number }}-${{ github.event_name }}-${{ env.VUS || 'x' }}vus
+          path: movies-api-loadtest/load-tests/reports/
+          retention-days: 14
+          if-no-files-found: warn
+
+      # L'échec du workflow est préservé quand un seuil est dépassé, et signalé différemment d'un problème technique.
+      - name: Verdict
+        if: always()
+        env:
+          STATUS: ${{ steps.result.outputs.status }}
+        run: |
+          case "$STATUS" in
+            ok) echo "Seuils respectés." ;;
+            seuil) echo "::error::Seuil de performance dépassé : voir le résumé et les rapports."; exit 1 ;;
+            *) echo "::error::Problème technique : le test n'a pas permis de conclure sur les performances."; exit 1 ;;
+          esac
+
+  # Appels à l'API GitHub après le test, hors de la boucle de charge, avec le jeton automatique du workflow.
+  publish:
+    needs: perf
+    # Toujours exécuté (même si perf a échoué sur un seuil), dès qu'un résultat interprété existe.
+    if: always() && needs.perf.outputs.result != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: movies-api-loadtest/scripts/perf-issue.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Création ou mise à jour du ticket
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RESULT_JSON: ${{ needs.perf.outputs.result }}
+        run: node movies-api-loadtest/scripts/perf-issue.mjs

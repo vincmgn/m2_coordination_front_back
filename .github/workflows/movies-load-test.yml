@@ -29,7 +29,7 @@ jobs:
   load-test:
     # Version figée : même machine d'un run à l'autre, donc résultats comparables.
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     defaults:
       run:
@@ -104,13 +104,21 @@ jobs:
         continue-on-error: true
         run: npm run -s load:breakpoint
 
+      # Même logique : le premier palier en échec est le résultat ; seule une erreur technique fait échouer l'étape.
+      - name: "Simulation 4 : paliers d'utilisateurs virtuels"
+        id: paliers
+        continue-on-error: true
+        run: npm run -s load:paliers
+
       - name: Résumé dans la page du run
         if: always()
         run: |
           {
             echo "## Tests de charge k6 — base : $([ "$USE_ATLAS" = true ] && echo Atlas || echo 'MongoDB jetable (CI)')"
             echo "Rapports HTML complets : section **Artifacts** en bas de cette page."
-            [ -f load-tests/reports/breakpoint.md ] && cat load-tests/reports/breakpoint.md
+            for md in paliers breakpoint; do
+              [ -f "load-tests/reports/$md.md" ] && cat "load-tests/reports/$md.md"
+            done
             for f in k6-progressif.txt k6-max.txt; do
               [ -f "$f" ] || continue
               echo "### ${f%.txt}"
@@ -133,10 +141,10 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      # Le job échoue si un seuil des simulations 1 et 2 casse (régression) ou si le test de rupture plante,
+      # Le job échoue si un seuil des simulations 1 et 2 casse (régression) ou si les simulations 3 et 4 plantent,
       # une fois les rapports enregistrés.
       - name: Verdict
-        if: steps.progressif.outcome == 'failure' || steps.max.outcome == 'failure' || steps.rupture.outcome == 'failure'
+        if: steps.progressif.outcome == 'failure' || steps.max.outcome == 'failure' || steps.rupture.outcome == 'failure' || steps.paliers.outcome == 'failure'
         run: |
           echo "::error::Au moins une simulation k6 a échoué (seuil dépassé ou erreur) : voir le résumé et les rapports."
           exit 1
