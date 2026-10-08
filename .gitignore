@@ -1,0 +1,4 @@
+# Commun à tous les projets du dépôt
+node_modules/
+dist/
+.env
