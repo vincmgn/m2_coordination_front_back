@@ -3,3 +3,7 @@ dist/
 .env
 .tools/
 load-tests/reports/
+
+# Déploiement local (docker compose) : état des versions et sauvegardes MongoDB
+.deploy/
+backups/

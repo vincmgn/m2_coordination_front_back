@@ -5,13 +5,26 @@ import moviesRouter from "./routes/movies.js";
 
 type AppError = Error & { status?: number; type?: string };
 
+// Version déployée (fixée dans l'image Docker au build), affichée sur GET / pour vérifier un déploiement ou un rollback.
+const APP_VERSION = process.env.APP_VERSION ?? "dev";
+// Ralentissement artificiel, uniquement pour simuler une version défectueuse (démo de rollback). 0 par défaut.
+const ARTIFICIAL_DELAY_MS = Number(process.env.ARTIFICIAL_DELAY_MS) || 0;
+
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json());
 
+if (ARTIFICIAL_DELAY_MS > 0) {
+  console.warn(`Ralentissement artificiel de ${ARTIFICIAL_DELAY_MS} ms par requête (simulation de régression)`);
+  app.use((_req: Request, _res: Response, next: NextFunction) => {
+    setTimeout(next, ARTIFICIAL_DELAY_MS);
+  });
+}
+
 app.get("/", (_req: Request, res: Response) => {
   res.json({
     name: "API Movies (sample_mflix)",
+    version: APP_VERSION,
     endpoints: [
       { method: "GET", path: "/movies", description: "Liste paginée", query: ["page", "limit (max 100)", "title", "year", "genre"] },
       { method: "GET", path: "/movies/genres", description: "Liste des genres distincts" },
@@ -55,7 +68,7 @@ const server = app.listen(PORT, (error) => {
     console.error(`Impossible d'écouter sur le port ${PORT} :`, error.message);
     process.exit(1);
   }
-  console.log(`API démarrée sur http://localhost:${PORT}`);
+  console.log(`API ${APP_VERSION} démarrée sur http://localhost:${PORT}`);
 });
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

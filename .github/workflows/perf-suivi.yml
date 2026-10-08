@@ -1,4 +1,6 @@
 name: "Suivi des performances (TP k6 + GitHub Issues)"
+# Titre du run (repris par le baromètre) : la charge et le déclenchement.
+run-name: "Suivi perf : ${{ github.event_name == 'schedule' && '5' || inputs.vus }} VUs (${{ github.event_name }})"
 
 # Lecture mesurée : GET /movies (load-tests/paliers.ts), seuils du TP : p95 < 500 ms, erreurs < 1 %, checks 100 %.
 on:
@@ -187,3 +189,33 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RESULT_JSON: ${{ needs.perf.outputs.result }}
         run: node movies-api-loadtest/scripts/perf-issue.mjs
+
+  # Baromètre W/L : historique des derniers runs, affiché dans le résumé (lecture seule de l'historique Actions).
+  barometre:
+    needs: [perf, publish]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: movies-api-loadtest/scripts/barometre.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Baromètre W/L
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_FILE: ${{ github.workflow_ref }}
+          CURRENT_CONCLUSION: ${{ needs.perf.result }}
+          CURRENT_TITLE: ${{ github.event_name == 'schedule' && '5' || inputs.vus }} VUs
+        run: |
+          # github.workflow_ref = owner/repo/.github/workflows/<fichier>@ref : on garde le nom du fichier.
+          WORKFLOW_FILE=$(basename "${WORKFLOW_FILE%@*}")
+          node movies-api-loadtest/scripts/barometre.mjs | tee -a "$GITHUB_STEP_SUMMARY"

@@ -6,24 +6,40 @@ import type { Options } from "k6/options";
 
 const BASE_URL = __ENV.BASE_URL || "http://localhost:3000";
 const VUS = 50;
-const DURATION = "20s";
+// Durée de chaque scénario en secondes (20 par défaut, 10 dans la CI des push pour aller vite).
+const SECONDS = Number(__ENV.SECONDS || 20);
+const DURATION = `${SECONDS}s`;
+const GAP = 5; // pause entre deux scénarios
+
+// Débit minimal attendu par route (req/s) : le seuil en nombre de requêtes suit la durée choisie.
+const MIN_RATE = { racine: 2000, detail: 1000, liste: 200 };
+const minCount = (route: keyof typeof MIN_RATE) => [`count>${MIN_RATE[route] * SECONDS}`];
+
+const scenario = (exec: string, index: number) => ({
+  executor: "constant-vus" as const,
+  vus: VUS,
+  duration: DURATION,
+  exec,
+  startTime: `${index * (SECONDS + GAP)}s`,
+  gracefulStop: "2s",
+});
 
 export const options: Options = {
   // Les trois scénarios s'exécutent à la suite (startTime), avec 5 s de pause entre eux ;
   // gracefulStop court pour qu'un scénario soit bien fini avant le suivant.
   scenarios: {
-    racine: { executor: "constant-vus", vus: VUS, duration: DURATION, exec: "racine", startTime: "0s", gracefulStop: "2s" },
-    liste: { executor: "constant-vus", vus: VUS, duration: DURATION, exec: "liste", startTime: "25s", gracefulStop: "2s" },
-    detail: { executor: "constant-vus", vus: VUS, duration: DURATION, exec: "detail", startTime: "50s", gracefulStop: "2s" },
+    racine: scenario("racine", 0),
+    liste: scenario("liste", 1),
+    detail: scenario("detail", 2),
   },
-  // Seuils anti-régression, calibrés sur la CI (base jetable, run #1) avec une marge :
+  // Seuils anti-régression, calibrés sur la CI (base jetable) avec une marge :
   // au moins ~50 % du débit mesuré, et un p95 au plus ~3 fois celui mesuré.
   //   mesuré en CI → racine 4 400 req/s, p95 15 ms | detail 2 070 req/s, p95 33 ms | liste 406 req/s, p95 202 ms
   // En local sur Atlas (bridé), detail et liste ne les tiennent pas : c'est attendu.
   thresholds: {
-    "http_reqs{scenario:racine}": ["count>40000"], // > 2 000 req/s sur 20 s
-    "http_reqs{scenario:detail}": ["count>20000"], // > 1 000 req/s
-    "http_reqs{scenario:liste}": ["count>4000"], // > 200 req/s
+    "http_reqs{scenario:racine}": minCount("racine"),
+    "http_reqs{scenario:detail}": minCount("detail"),
+    "http_reqs{scenario:liste}": minCount("liste"),
     "http_req_duration{scenario:racine}": ["p(95)<100"],
     "http_req_duration{scenario:detail}": ["p(95)<150"],
     "http_req_duration{scenario:liste}": ["p(95)<600"],

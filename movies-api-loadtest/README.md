@@ -128,7 +128,13 @@ Les seuils de `load:max` sont calibrés pour la base jetable de la CI : en local
 
 ### CI (GitHub Actions)
 
-À chaque push touchant ce dossier, `.github/workflows/movies-load-test.yml` lance les quatre tests sur une base MongoDB jetable (`npm run seed`, 21 349 films factices) et publie les tableaux des paliers et de rupture et les résumés dans la page du run, avec les rapports en artifacts. Le bouton **Run workflow** permet de lancer la même chose sur Atlas (secret `MONGODB_URI`).
+Tous les tests tournent sur une base MongoDB jetable (`npm run seed`, 21 349 films factices). Chaque run affiche un **baromètre W/L** (runs réussis / ratés sur les 20 derniers, météo ☀️ ⛅ 🌧️, série en cours) dans son résumé.
+
+| Workflow | Déclenchement | Contenu | Durée |
+| --- | --- | --- | --- |
+| `movies-load-test.yml` | chaque push touchant ce dossier | build, types, seuils anti-régression (`load:max`, 10 s par route) | ~1 min 30 |
+| `movies-bilan-charge.yml` | manuel (base jetable ou Atlas) et chaque lundi 6 h 43 | progressif, débit maximal, rupture, paliers | ~8 min |
+| `perf-suivi.yml` | manuel (charge au choix) et en semaine à 7 h 17 | TP : mesure de `GET /movies` + tickets GitHub Issues | ~3 min |
 
 ### Suivi des performances (TP k6 + GitHub Issues)
 
@@ -152,3 +158,35 @@ Les seuils de `load:max` sont calibrés pour la base jetable de la CI : en local
 - **Pas de double publication** : `concurrency` exécute les runs l'un après l'autre, et chaque publication porte l'identifiant du run (relancer un run ne publie pas deux fois).
 - **Appel GitHub refusé** : 2 nouvelles tentatives pour 429/5xx, sinon erreur explicite et run en échec.
 - **Droits** : jeton automatique `GITHUB_TOKEN` (aucune clé dans le dépôt) ; `issues: write` uniquement dans le job `publish`, qui ne lance ni l'API ni k6 ni les dépendances npm.
+
+## Déploiement et rollback (Docker Compose)
+
+`docker-compose.yml` simule un serveur de production : l'API tourne dans une **image versionnée** (`movies-api:v1`, `v2`…) sur http://localhost:8080, MongoDB garde ses données dans le **volume persistant** `mongo-data` (port 27018). Changer de version ne recrée que le conteneur `api` : les données ne sont jamais touchées.
+
+```bash
+npm run demo:rollback          # démonstration complète (voir ci-dessous)
+
+npm run deploy -- v2           # déploie une version
+npm run rollback               # revient à la version précédente (ou : npm run rollback -- v1)
+npm run restore -- backups/<fichier>.archive.gz   # dernier recours : restaure la base
+
+docker compose down            # arrête tout ; SURTOUT PAS « down -v », qui supprime les données
+```
+
+**`scripts/deploy.sh <version>`**
+
+1. démarre MongoDB (volume persistant) ;
+2. **sauvegarde la base** (`mongodump`, dans `backups/`, les 10 dernières sont gardées) ;
+3. construit l'image `movies-api:<version>` ;
+4. remplace **uniquement** le conteneur `api` et vérifie que la bonne version répond ;
+5. **contrôle k6** (5 VUs, p95 < 500 ms, erreurs < 1 %, checks 100 %) ;
+6. si l'étape 4 ou 5 échoue : **rollback automatique** vers la version précédente.
+
+**Deux sortes de retour en arrière :**
+
+| Problème | Solution | Données |
+| --- | --- | --- |
+| La nouvelle version est lente ou plante, les données sont saines | `rollback` (automatique ou manuel) : on remet l'ancienne image | **aucune perte** : la base n'est pas touchée |
+| La nouvelle version a **abîmé les données** | `rollback` puis `restore` de la sauvegarde faite avant le déploiement | les écritures postérieures à la sauvegarde sont perdues (une sauvegarde de l'état abîmé est faite juste avant) |
+
+**Démonstration (`npm run demo:rollback`)** : déploie une v1, crée un film, tente de déployer une `v2-lente` (+800 ms par requête, `ARTIFICIAL_DELAY_MS`), que le contrôle k6 refuse (p95 ≈ 820 ms), revient automatiquement à la v1, puis vérifie : version v1 en service, film créé avant la v2 toujours présent, nombre de films inchangé. L'historique est dans `.deploy/history.log`.
