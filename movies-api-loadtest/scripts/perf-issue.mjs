@@ -5,11 +5,22 @@
 // Usage : RESULT_JSON='{…}' GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo node scripts/perf-issue.mjs
 // Codes de sortie : 0 = publication faite ou inutile, 1 = résultat inexploitable, 2 = appel GitHub refusé.
 
+import { appendFileSync } from "node:fs";
+
 const LABEL = "performance";
 const API = process.env.GITHUB_API_URL || "https://api.github.com";
 const { GITHUB_TOKEN, GITHUB_REPOSITORY, RESULT_JSON, GITHUB_RUN_ID, GITHUB_RUN_ATTEMPT } = process.env;
 
 class GitHubError extends Error {}
+
+// Affiche le message dans le journal ET dans le résumé du run (bloc « publish summary »), avec le lien du ticket.
+function outcome(message, { error = false } = {}) {
+  console[error ? "error" : "log"](error ? `::error::${message}` : message);
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## ${error ? "⚠️" : "🎫"} Suivi GitHub Issues\n\n${message}\n`);
+  }
+}
+const link = (i) => `[ticket #${i.number}](${i.html_url})`;
 
 async function github(method, path, body) {
   // Nouvelle tentative uniquement pour les erreurs passagères (limite de débit, panne côté GitHub).
@@ -52,7 +63,7 @@ function parseResult() {
     if (!["ok", "seuil", "technique"].includes(result.status)) throw new Error(`statut inconnu « ${result.status} »`);
     return result;
   } catch (e) {
-    console.error(`::error::Résultat du test inexploitable, aucune publication : ${e.message}`);
+    outcome(`Résultat du test inexploitable, aucune publication : ${e.message}`, { error: true });
     process.exit(1);
   }
 }
@@ -102,12 +113,12 @@ async function ensureLabel(repoPath) {
 async function main() {
   const r = parseResult();
   if (!GITHUB_TOKEN || !GITHUB_REPOSITORY) {
-    console.error("::error::GITHUB_TOKEN ou GITHUB_REPOSITORY absent : publication impossible.");
+    outcome("GITHUB_TOKEN ou GITHUB_REPOSITORY absent : publication impossible.", { error: true });
     process.exit(2);
   }
 
   if (r.status === "technique") {
-    console.log(`Problème technique (${r.reason}) : aucune publication, les mesures ne permettent pas de conclure.`);
+    outcome(`Problème technique (${r.reason}) : aucune publication, les mesures ne permettent pas de conclure.`);
     return;
   }
 
@@ -124,7 +135,7 @@ async function main() {
   if (issue) {
     const comments = await githubList(`${repoPath}/issues/${issue.number}/comments`);
     if (issue.body.includes(runMarker) || comments.some((c) => c.body?.includes(runMarker))) {
-      console.log(`Run déjà publié sur le ticket #${issue.number} : rien à faire.`);
+      outcome(`Run déjà publié sur le ${link(issue)} : rien à faire.`);
       return;
     }
   }
@@ -134,7 +145,7 @@ async function main() {
       await github("POST", `${repoPath}/issues/${issue.number}/comments`, {
         body: `${runMarker}\n### ❌ Nouvelle occurrence : seuil toujours dépassé\n\n${report(r)}`,
       });
-      console.log(`Nouvelle occurrence ajoutée au ticket #${issue.number} : ${issue.html_url}`);
+      outcome(`❌ Nouvelle occurrence ajoutée au ${link(issue)} (pas de nouveau ticket : même problème).`);
     } else {
       await ensureLabel(repoPath);
       const created = await github("POST", `${repoPath}/issues`, {
@@ -152,7 +163,7 @@ async function main() {
           "**Ce ticket n'est jamais fermé automatiquement** : à fermer par une personne après analyse.",
         ].join("\n"),
       });
-      console.log(`Ticket créé : #${created.number} ${created.html_url}`);
+      outcome(`❌ Nouveau problème de seuil : ${link(created)} créé.`);
     }
   } else if (issue) {
     await github("POST", `${repoPath}/issues/${issue.number}/comments`, {
@@ -165,13 +176,13 @@ async function main() {
         "Le ticket reste ouvert : à fermer par une personne après analyse.",
       ].join("\n"),
     });
-    console.log(`Retour sous les seuils ajouté au ticket #${issue.number} : ${issue.html_url}`);
+    outcome(`✅ Retour sous les seuils ajouté au ${link(issue)} (le ticket reste ouvert : à fermer après analyse).`);
   } else {
-    console.log("Seuils respectés et aucun ticket ouvert : rien à publier.");
+    outcome("✅ Seuils respectés et aucun ticket ouvert : rien à publier.");
   }
 }
 
 main().catch((e) => {
-  console.error(`::error::${e instanceof GitHubError ? e.message : `Publication impossible : ${e.message}`}`);
+  outcome(e instanceof GitHubError ? e.message : `Publication impossible : ${e.message}`, { error: true });
   process.exit(2);
 });
