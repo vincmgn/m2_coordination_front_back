@@ -14,6 +14,7 @@ app.get("/", (_req: Request, res: Response) => {
     name: "API Movies (sample_mflix)",
     endpoints: [
       { method: "GET", path: "/movies", description: "Liste paginée", query: ["page", "limit (max 100)", "title", "year", "genre"] },
+      { method: "GET", path: "/movies/genres", description: "Liste des genres distincts" },
       { method: "GET", path: "/movies/:id", description: "Un film par son _id" },
       { method: "POST", path: "/movies", description: "Créer un film (title obligatoire)" },
       { method: "PUT", path: "/movies/:id", description: "Modifier les champs envoyés" },

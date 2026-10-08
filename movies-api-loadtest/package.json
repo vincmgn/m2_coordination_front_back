@@ -12,7 +12,8 @@
     "load": "scripts/k6.sh run load-tests/movies.ts",
     "load:report": "mkdir -p load-tests/reports && K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_HOST=localhost K6_WEB_DASHBOARD_EXPORT=load-tests/reports/rapport.html scripts/k6.sh run load-tests/movies.ts",
     "load:max": "mkdir -p load-tests/reports && K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_HOST=localhost K6_WEB_DASHBOARD_EXPORT=load-tests/reports/rapport-max.html scripts/k6.sh run load-tests/max-throughput.ts",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "load:breakpoint": "scripts/breakpoint.sh"
   },
   "engines": {
     "node": ">=20"

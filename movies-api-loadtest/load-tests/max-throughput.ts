@@ -16,17 +16,20 @@ export const options: Options = {
     liste: { executor: "constant-vus", vus: VUS, duration: DURATION, exec: "liste", startTime: "25s", gracefulStop: "2s" },
     detail: { executor: "constant-vus", vus: VUS, duration: DURATION, exec: "detail", startTime: "50s", gracefulStop: "2s" },
   },
-  // Sans seuil : sert juste à afficher le détail par route dans le résumé.
+  // Seuils anti-régression, calibrés sur la CI (base jetable, run #1) avec une marge :
+  // au moins ~50 % du débit mesuré, et un p95 au plus ~3 fois celui mesuré.
+  //   mesuré en CI → racine 4 400 req/s, p95 15 ms | detail 2 070 req/s, p95 33 ms | liste 406 req/s, p95 202 ms
+  // En local sur Atlas (bridé), detail et liste ne les tiennent pas : c'est attendu.
   thresholds: {
-    "http_reqs{scenario:racine}": [],
-    "http_reqs{scenario:liste}": [],
-    "http_reqs{scenario:detail}": [],
-    "http_req_duration{scenario:racine}": [],
-    "http_req_duration{scenario:liste}": [],
-    "http_req_duration{scenario:detail}": [],
-    "http_req_failed{scenario:racine}": [],
-    "http_req_failed{scenario:liste}": [],
-    "http_req_failed{scenario:detail}": [],
+    "http_reqs{scenario:racine}": ["count>40000"], // > 2 000 req/s sur 20 s
+    "http_reqs{scenario:detail}": ["count>20000"], // > 1 000 req/s
+    "http_reqs{scenario:liste}": ["count>4000"], // > 200 req/s
+    "http_req_duration{scenario:racine}": ["p(95)<100"],
+    "http_req_duration{scenario:detail}": ["p(95)<150"],
+    "http_req_duration{scenario:liste}": ["p(95)<600"],
+    "http_req_failed{scenario:racine}": ["rate<0.01"],
+    "http_req_failed{scenario:detail}": ["rate<0.01"],
+    "http_req_failed{scenario:liste}": ["rate<0.01"],
   },
 };
 

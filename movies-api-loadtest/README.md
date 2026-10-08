@@ -34,6 +34,7 @@ npm run typecheck  # vérification des types sans compiler
 | ------- | ------------- | ------------------------------------------------------------------- |
 | GET     | `/`           | Liste des endpoints (JSON)                                          |
 | GET     | `/movies`     | Liste paginée : `page`, `limit` (max 100), filtres `title`, `year`, `genre` |
+| GET     | `/movies/genres` | Liste des genres (triée)                                       |
 | GET     | `/movies/:id` | Un film complet                                                     |
 | POST    | `/movies`     | Crée un film (`title` obligatoire) → 201                            |
 | PUT     | `/movies/:id` | Modifie les champs envoyés (les autres sont conservés)              |
@@ -105,4 +106,21 @@ npm run load:report   # graphes en direct sur http://localhost:5665 + rapport HT
 
 npm run load:max      # débit maximal, sans pause : GET /, puis /movies, puis /movies/:id
                       # rapport dans load-tests/reports/rapport-max.html
+
+npm run load:breakpoint   # test de rupture : débit à partir duquel chaque route ne tient plus
+                          # tableau dans load-tests/reports/breakpoint.md
 ```
+
+### Seuils
+
+| Test | Seuils | Si un seuil casse |
+| --- | --- | --- |
+| `load` / `load:report` | p95 < 800 ms, erreurs < 1 % | la CI échoue |
+| `load:max` | par route : débit minimal et p95 maximal (calibrés sur la CI, voir `load-tests/max-throughput.ts`) | la CI échoue : régression |
+| `load:breakpoint` | p95 < 500 ms, erreurs < 1 %, moins de 50 requêtes abandonnées | k6 s'arrête : c'est le point de rupture (résultat attendu) |
+
+Les seuils de `load:max` sont calibrés pour la base jetable de la CI : en local sur Atlas (bridé), `detail` et `liste` ne les tiennent pas.
+
+### CI (GitHub Actions)
+
+À chaque push touchant ce dossier, `.github/workflows/movies-load-test.yml` lance les trois tests sur une base MongoDB jetable (`npm run seed`, 21 349 films factices) et publie le tableau de rupture et les résumés dans la page du run, avec les rapports en artifacts. Le bouton **Run workflow** permet de lancer la même chose sur Atlas (secret `MONGODB_URI`).

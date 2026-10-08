@@ -122,6 +122,12 @@ router.get("/", async (req, res) => {
   res.json({ page, limit, total, totalPages: Math.ceil(total / limit), data });
 });
 
+// Déclarée avant /:id pour que "genres" ne soit pas pris pour un identifiant.
+router.get("/genres", async (_req, res) => {
+  const genres = await movies().distinct("genres");
+  res.json(genres.filter((g): g is string => typeof g === "string").sort());
+});
+
 router.get("/:id", async (req, res) => {
   const movie = await movies().findOne({ _id: parseId(req.params.id) });
   if (!movie) throw notFound();
