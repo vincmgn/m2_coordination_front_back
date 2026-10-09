@@ -2,6 +2,7 @@ import { Router } from "express";
 import { ObjectId, type Filter } from "mongodb";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
+import { searchMovies } from "./search.js";
 
 interface Movie {
   title: string;
@@ -113,6 +114,9 @@ router.get("/", async (req, res) => {
 
   res.json({ page, limit, total, totalPages: Math.ceil(total / limit), data });
 });
+
+// Recherche réactive (voir search.ts). Déclarée avant /:id, comme /genres.
+router.get("/search", searchMovies);
 
 // Déclarée avant /:id pour que "genres" ne soit pas pris pour un identifiant.
 router.get("/genres", async (_req, res) => {

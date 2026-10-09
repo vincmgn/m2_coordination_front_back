@@ -6,7 +6,9 @@ import { RouterLink, RouterView } from 'vue-router'
   <header class="header">
     <div class="container header-inner">
       <RouterLink to="/" class="logo">🎬 Movies</RouterLink>
-      <RouterLink to="/movies/new" class="btn btn-primary">+ Ajouter un film</RouterLink>
+      <nav class="nav">
+        <RouterLink to="/movies/new" class="btn btn-primary">+ Ajouter un film</RouterLink>
+      </nav>
     </div>
   </header>
 
@@ -30,6 +32,11 @@ import { RouterLink, RouterView } from 'vue-router'
   justify-content: space-between;
   gap: 1rem;
   padding-block: 0.75rem;
+}
+
+.nav {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .logo {

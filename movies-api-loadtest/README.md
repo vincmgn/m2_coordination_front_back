@@ -44,6 +44,19 @@ npm run typecheck  # vérification des types sans compiler
 - La liste ne renvoie que `_id`, `title`, `year`, `genres`, `imdb.rating` et `poster`.
 - Erreurs au format `{ "error": "message" }` : 400 (id ou données invalides), 404 (film ou route absents), 500.
 
+## Recherche réactive
+
+`GET /movies/search?q=…` (`src/routes/search.ts`) :
+
+| Point du contrat | Règle |
+| --- | --- |
+| `q` | nettoyé aux extrémités, 2 à 60 caractères ; absent ou hors bornes → **400** |
+| Critères | **chaque mot** doit correspondre au **titre OU genre** (sous-chaîne) **OU année** (si le mot est une année) : `matrix 1999`, `drama, 1999`, `star wars 1977` ; mots séparés par espaces, virgules ou points-virgules |
+| Casse et accents | ignorés (`AMÉLIE` = `amelie`) ; les caractères spéciaux restent littéraux (`.*` ne trouve rien) |
+| Réponse | `{ query, items: [{ id, title, year, genres, poster, imdb }] }`, triée par titre, **20 au maximum** ; aucun résultat → 200 avec `items: []` |
+
+**Profil lab** (`npm run dev:lab`, jamais en production) : `ma` répond en 1 200 ms, `mar` en 100 ms, tout autre texte en 180 ms, `erreur` renvoie **503**. Sert à provoquer des réponses qui reviennent dans le désordre.
+
 ## Réservation de places en temps réel (SSE)
 
 Équivalent cinéma des créneaux MediSlot : un **siège d'une séance** se réserve une seule fois. Chaque film a des séances calculées (14 h, 17 h 30, 21 h sur 3 jours, heure de Paris) dans une salle de 8 rangées × 12 sièges ; seules les réservations sont stockées (collection `reservations`).

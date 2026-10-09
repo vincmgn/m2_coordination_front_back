@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { connectDB, closeDB } from "./db.js";
+import { HttpError } from "./http-error.js";
 import moviesRouter from "./routes/movies.js";
 import screeningsRouter, { ensureScreeningIndexes } from "./routes/screenings.js";
 
@@ -28,6 +29,7 @@ app.get("/", (_req: Request, res: Response) => {
     version: APP_VERSION,
     endpoints: [
       { method: "GET", path: "/movies", description: "Liste paginée", query: ["page", "limit (max 100)", "title", "year", "genre"] },
+      { method: "GET", path: "/movies/search?q=", description: "Recherche par titre, genre ou année (2 à 60 caractères, 20 résultats max)" },
       { method: "GET", path: "/movies/genres", description: "Liste des genres distincts" },
       { method: "GET", path: "/movies/:id", description: "Un film par son _id" },
       { method: "POST", path: "/movies", description: "Créer un film (title obligatoire)" },
@@ -56,8 +58,11 @@ app.use((err: AppError, _req: Request, res: Response, next: NextFunction) => {
   }
 
   const status = err.status ?? 500;
-  if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 ? "Erreur interne du serveur" : err.message });
+  // Une HttpError est une réponse voulue (ex. 503 simulé) : son message est montré tel quel.
+  // Toute autre erreur 5xx est un bug : on la journalise et on masque ses détails.
+  const unexpected = status >= 500 && !(err instanceof HttpError);
+  if (unexpected) console.error(err);
+  res.status(status).json({ error: unexpected ? "Erreur interne du serveur" : err.message });
 });
 
 const PORT = Number(process.env.PORT) || 3000;

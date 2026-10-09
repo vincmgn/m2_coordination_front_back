@@ -122,3 +122,17 @@ export const cancelBooking = (id: string, bookingId: string) =>
 
 // Flux SSE de la séance : URL à passer à EventSource (même préfixe /api que les autres appels).
 export const screeningEventsUrl = (id: string) => `${BASE_URL}/screenings/${id}/events`
+
+// --- Recherche réactive ------------------------------------------------------------------------
+
+// Mêmes champs que MovieSummary, avec id au lieu de _id (contrat de la recherche).
+export type SearchItem = Omit<MovieSummary, '_id'> & { id: string }
+
+export interface SearchResponse {
+  query: string
+  items: SearchItem[]
+}
+
+// signal : permet d'annuler l'appel (AbortController) quand la saisie change.
+export const searchMovies = (q: string, signal: AbortSignal) =>
+  request<SearchResponse>(`/movies/search?${new URLSearchParams({ q })}`, { signal })
