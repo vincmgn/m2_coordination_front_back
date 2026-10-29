@@ -2,6 +2,15 @@ import type { Contact } from "@/api";
 
 const CONTACT_KEY = "booking:contact";
 const seatsKey = (screeningId: string) => `booking:seats:${screeningId}`;
+const pendingKey = (screeningId: string) => `booking:pending:${screeningId}`;
+
+// Réservation cliquée pendant une panne de l'API : renvoyée à son retour, avec le même requestId (pas de doublon).
+export interface PendingBooking {
+  requestId: string;
+  seats: string[];
+  contact: Contact;
+  measure: boolean;
+}
 
 function read<T>(key: string): T | null {
   try {
@@ -38,3 +47,7 @@ export function clearDraft(screeningId: string) {
   remove(CONTACT_KEY);
   remove(seatsKey(screeningId));
 }
+
+export const loadPending = (screeningId: string) => read<PendingBooking>(pendingKey(screeningId));
+export const savePending = (screeningId: string, pending: PendingBooking) => write(pendingKey(screeningId), pending);
+export const clearPending = (screeningId: string) => remove(pendingKey(screeningId));

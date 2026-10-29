@@ -66,7 +66,7 @@ npm run typecheck  # vérification des types sans compiler
 | GET | `/screenings?movieId=<id>` | Séances à venir et places libres |
 | GET | `/screenings/:id` | Plan de salle et sièges réservés (lecture relue après chaque notification) |
 | GET | `/screenings/:id/events` | Flux SSE (`text/event-stream`) |
-| POST | `/screenings/:id/reservations` | `{ "seats": ["C7","C8"], "name": "Alice" }` → 201, **409 si un siège est déjà pris**, 404, 400 |
+| POST | `/screenings/:id/reservations` | `{ "seats": ["C7","C8"], "name": "Alice", "email": "…", "phone": "…", "requestId": "<uuid>" }` → 201, **409 si un siège est déjà pris**, 404, 400. Même `requestId` renvoyé → **200** avec la réservation existante (pas de doublon) |
 | DELETE | `/screenings/:id/reservations/:bookingId` | Annule la réservation (libère ses sièges) → 204 |
 
 **Contrat du flux** (`id:` incrémental, `retry: 2000`) :

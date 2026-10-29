@@ -121,10 +121,11 @@ export interface Contact {
   phone: string
 }
 
-export const reserveSeats = (id: string, seats: string[], contact: Contact, measure = false) =>
+// requestId : identifiant de la demande ; la renvoyer (après une panne) ne réserve jamais deux fois.
+export const reserveSeats = (id: string, seats: string[], contact: Contact, requestId: string, measure = false) =>
   request<Booking>(`/screenings/${id}/reservations`, {
     method: 'POST',
-    body: JSON.stringify({ seats, ...contact }),
+    body: JSON.stringify({ seats, ...contact, requestId }),
     headers: measure ? { 'X-AB-Measure': '1' } : {},
   })
 

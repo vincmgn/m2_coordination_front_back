@@ -35,6 +35,7 @@ interface Reservation {
   email: string;
   phone: string;
   bookingId: ObjectId;
+  requestId?: string;
   createdAt: Date;
 }
 
@@ -42,10 +43,16 @@ const router = Router();
 const reservations = () => getDB().collection<Reservation>("reservations");
 const movies = () => getDB().collection("movies");
 
-// À appeler au démarrage : l'index unique est ce qui empêche la double réservation.
 export async function ensureScreeningIndexes() {
   await reservations().createIndex({ screeningId: 1, seat: 1 }, { unique: true });
   await reservations().createIndex({ screeningId: 1, bookingId: 1 });
+  await reservations().createIndex({ requestId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } });
+}
+
+async function findByRequest(screeningId: string, requestId: string) {
+  const rows = await reservations().find({ screeningId, requestId }).toArray();
+  if (!rows.length) return null;
+  return { bookingId: rows[0]!.bookingId, screeningId, seats: rows.map((r) => r.seat), name: rows[0]!.name };
 }
 
 // --- Séances calculées -------------------------------------------------------------------------
@@ -76,8 +83,7 @@ const addDays = (date: string, days: number) => {
 };
 
 // Identifiant de séance : <id du film>-<AAAAMMJJ>-<HHMM>, ex. 573a1390f29313caabcd42e8-20261009-1730.
-const screeningId = (movieId: string, date: string, time: string) =>
-  `${movieId}-${date.replaceAll("-", "")}-${time.replace(":", "")}`;
+const screeningId = (movieId: string, date: string, time: string) => `${movieId}-${date.replaceAll("-", "")}-${time.replace(":", "")}`;
 
 function upcomingScreenings(movieId: string) {
   const now = parisNow();
@@ -98,16 +104,17 @@ async function findScreening(id: string) {
   const [, movieId, y, m, d, hh, mm] = match;
   const screening = upcomingScreenings(movieId.toLowerCase()).find((s) => s.id === id.toLowerCase());
   if (!screening) throw new HttpError(404, `Séance introuvable ou déjà passée : ${y}-${m}-${d} ${hh}:${mm}`);
-  const movie = await movies().findOne(
-    { _id: new ObjectId(movieId) },
-    { projection: { title: 1, year: 1, poster: 1, runtime: 1 } },
-  );
+  const movie = await movies().findOne({ _id: new ObjectId(movieId) }, { projection: { title: 1, year: 1, poster: 1, runtime: 1 } });
   if (!movie) throw new HttpError(404, "Film introuvable");
   return { ...screening, movie };
 }
 
 const takenSeats = async (id: string) =>
-  (await reservations().find({ screeningId: id }, { projection: { seat: 1 } }).toArray()).map((r) => r.seat);
+  (
+    await reservations()
+      .find({ screeningId: id }, { projection: { seat: 1 } })
+      .toArray()
+  ).map((r) => r.seat);
 
 function parseSeats(value: unknown): string[] {
   const seatPattern = new RegExp(`^[${ROWS.join("")}]([1-9]|1[0-${SEATS_PER_ROW - 10}])$`);
@@ -123,9 +130,7 @@ function parseSeats(value: unknown): string[] {
 
 // --- Temps réel (SSE) --------------------------------------------------------------------------
 
-type ScreeningEvent =
-  | { type: "seat-updated"; screeningId: string; seats: string[]; status: "BOOKED" | "AVAILABLE" }
-  | { type: "viewers"; count: number };
+type ScreeningEvent = { type: "seat-updated"; screeningId: string; seats: string[]; status: "BOOKED" | "AVAILABLE" } | { type: "viewers"; count: number };
 
 const bus = new EventEmitter();
 bus.setMaxListeners(0); // un écouteur par navigateur connecté : pas de limite artificielle
@@ -152,10 +157,7 @@ router.get("/", async (req, res) => {
 
   const list = upcomingScreenings(movieId);
   const counts = await reservations()
-    .aggregate<{ _id: string; taken: number }>([
-      { $match: { screeningId: { $in: list.map((s) => s.id) } } },
-      { $group: { _id: "$screeningId", taken: { $sum: 1 } } },
-    ])
+    .aggregate<{ _id: string; taken: number }>([{ $match: { screeningId: { $in: list.map((s) => s.id) } } }, { $group: { _id: "$screeningId", taken: { $sum: 1 } } }])
     .toArray();
   const taken = new Map(counts.map((c) => [c._id, c.taken]));
   res.json(list.map((s) => ({ ...s, capacity: CAPACITY, available: CAPACITY - (taken.get(s.id) ?? 0) })));
@@ -216,20 +218,40 @@ router.post("/:id/reservations", async (req, res) => {
   // Téléphone gardé sans espaces, points ni tirets : 8 à 15 chiffres, « + » initial facultatif.
   const phone = typeof req.body?.phone === "string" ? req.body.phone.replace(/[\s.()-]/g, "") : "";
   if (!/^\+?\d{8,15}$/.test(phone)) throw new HttpError(400, 'Le champ "phone" est requis (8 à 15 chiffres, ex. 06 12 34 56 78)');
+  // Facultatif : avec requestId, renvoyer la même demande ne réserve jamais deux fois (idempotence).
+  const requestId = req.body?.requestId;
+  if (requestId !== undefined && (typeof requestId !== "string" || !/^[0-9a-f-]{36}$/i.test(requestId))) {
+    throw new HttpError(400, 'Le champ "requestId" doit être un UUID');
+  }
+  if (requestId) {
+    const existing = await findByRequest(screening.id, requestId);
+    if (existing) {
+      res.status(200).json(existing); // déjà réservée : même réponse, aucune nouvelle écriture ni conversion
+      return;
+    }
+  }
 
   // Tous les sièges d'une réservation ou aucun : en cas de conflit, on supprime ceux déjà insérés.
   const bookingId = new ObjectId();
   const createdAt = new Date();
   try {
     await reservations().insertMany(
-      seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt })),
+      seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt, ...(requestId && { requestId }) })),
       { ordered: false },
     );
   } catch (e) {
     if (!(e instanceof MongoBulkWriteError) || e.code !== 11000) throw e;
     await reservations().deleteMany({ screeningId: screening.id, bookingId });
+    // Deux envois simultanés de la même demande : le second tombe sur les sièges du premier, ce n'est pas un conflit.
+    const existing = requestId ? await findByRequest(screening.id, requestId) : null;
+    if (existing) {
+      res.status(200).json(existing);
+      return;
+    }
     const conflicts = (
-      await reservations().find({ screeningId: screening.id, seat: { $in: seats } }, { projection: { seat: 1 } }).toArray()
+      await reservations()
+        .find({ screeningId: screening.id, seat: { $in: seats } }, { projection: { seat: 1 } })
+        .toArray()
     ).map((r) => r.seat);
     res.status(409).json({ error: `Sièges déjà réservés : ${conflicts.join(", ")}`, seats: conflicts });
     return;

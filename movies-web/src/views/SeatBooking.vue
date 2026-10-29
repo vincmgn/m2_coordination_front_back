@@ -11,7 +11,17 @@ import {
   type ScreeningDetail,
 } from '@/api'
 import { useExperiment } from '@/composables/useExperiment'
-import { clearDraft, loadContact, loadSeats, saveContact, saveSeats } from '@/bookingDraft'
+import {
+  clearDraft,
+  clearPending,
+  loadContact,
+  loadPending,
+  loadSeats,
+  saveContact,
+  savePending,
+  saveSeats,
+  type PendingBooking,
+} from '@/bookingDraft'
 import { trackExposure } from '@/composables/trackExposure'
 
 const MAX_SEATS = 10
@@ -38,6 +48,8 @@ const phoneValid = computed(() => /^\+?\d{8,15}$/.test(phone.value.replace(/[\s.
 const contactValid = computed(() => !!name.value.trim() && !!email.value.trim() && phoneValid.value)
 const booking = ref<Booking | null>(null)
 const saving = ref(false)
+// Réservation en attente : cliquée pendant une panne, renvoyée automatiquement au retour de l'API.
+const queued = ref<PendingBooking | null>(null)
 
 // Brouillon : chaque saisie est gardée, pour ne rien perdre si l'API est hors ligne ou la page rechargée.
 watch([name, email, phone], ([n, e, p]) => saveContact({ name: n, email: e, phone: p }))
@@ -129,6 +141,7 @@ function connect(id: string) {
   source.addEventListener('ready', () => {
     live.value = 'en direct'
     reload()
+    flushQueued()
   })
   source.addEventListener('seat-updated', () => reload())
   source.addEventListener('viewers', (e) => (viewers.value = JSON.parse(e.data).count))
@@ -151,8 +164,10 @@ watch(
     error.value = null
     booking.value = null
     notice.value = null
-    selected.value = new Set()
     taken.value = new Set()
+    // Réservation restée en attente (page rechargée pendant la panne) : sièges réaffichés, renvoi au prochain ready.
+    queued.value = loadPending(id)
+    selected.value = new Set(queued.value?.seats)
     try {
       screening.value = await getScreening(id)
       taken.value = new Set(screening.value.taken)
@@ -173,7 +188,11 @@ watch(
 if (FALLBACK_RELOAD_MS > 0) timer = setInterval(() => screening.value && reload(), FALLBACK_RELOAD_MS)
 
 // Démontage : fermer le flux, arrêter le minuteur et empêcher toute relecture de modifier l'écran.
+// Retour du réseau côté navigateur : renvoi immédiat, sans attendre la reconnexion du flux.
+window.addEventListener('online', flushQueued)
+
 onBeforeUnmount(() => {
+  window.removeEventListener('online', flushQueued)
   stopped = true
   source?.close()
   clearInterval(timer)
@@ -182,7 +201,7 @@ onBeforeUnmount(() => {
 
 // --- Sélection et réservation ----------------------------------------------------------------------
 function toggle(seat: string) {
-  if (taken.value.has(seat) || booking.value) return
+  if (taken.value.has(seat) || booking.value || queued.value) return
   notice.value = null
   const next = new Set(selected.value)
   if (next.has(seat)) next.delete(seat)
@@ -209,36 +228,63 @@ watch(
 // Seule la réponse du POST confirme une réservation personnelle ; le flux SSE ne fait qu'informer.
 async function reserve() {
   if (!screening.value || !selected.value.size || !contactValid.value) return
+  await send({
+    requestId: crypto.randomUUID(),
+    seats: sortedSelection.value,
+    contact: { name: name.value.trim(), email: email.value.trim(), phone: phone.value.trim() },
+    measure: counted.value,
+  })
+}
+
+// Envoi d'une réservation (premier clic ou renvoi d'une réservation en attente).
+// API injoignable (5xx, réseau, réponse perdue) : la demande est mise en attente et renvoyée à la reconnexion.
+// Le requestId reste le même : si l'API l'avait déjà enregistrée, elle renvoie la réservation existante.
+async function send(request: PendingBooking) {
+  // props.id plutôt que screening : au retour de l'API, le renvoi peut partir avant la relecture de la séance.
+  if (saving.value) return
+  const id = props.id
   saving.value = true
   notice.value = null
-  for (const seat of selected.value) pending.add(seat)
+  for (const seat of request.seats) pending.add(seat)
   try {
-    booking.value = await reserveSeats(
-      screening.value.id,
-      sortedSelection.value,
-      { name: name.value.trim(), email: email.value.trim(), phone: phone.value.trim() },
-      counted.value,
-    )
-    clearDraft(screening.value.id)
+    booking.value = await reserveSeats(id, request.seats, request.contact, request.requestId, request.measure)
+    clearPending(id)
+    clearDraft(id)
+    queued.value = null
     selected.value = new Set()
     notice.value = 'Votre réservation est confirmée.'
   } catch (e) {
-    if (e instanceof ApiError && e.status === 409) {
+    const offline = !(e instanceof ApiError) || e.status >= 500
+    if (offline) {
+      savePending(id, request)
+      queued.value = request
+      notice.value = null
+      return
+    }
+    clearPending(id)
+    queued.value = null
+    if (e.status === 409) {
       pending.clear()
       dropFromSelection(Array.isArray(e.body?.seats) ? (e.body.seats as string[]) : [])
-    } else if ((e instanceof ApiError && e.status >= 500) || !navigator.onLine) {
-      // API hors ligne (le proxy répond 5xx) ou navigateur sans réseau : la réservation n'a pas eu lieu, le brouillon est gardé.
-      notice.value = 'Service indisponible : vos informations sont gardées, réessayez dans un instant.'
-    } else if (e instanceof ApiError) {
-      notice.value = e.message
     } else {
-      notice.value = 'Résultat incertain (réponse perdue) : vérifiez la salle avant de réessayer.'
+      notice.value = e.message
     }
   } finally {
     pending.clear()
     saving.value = false
     reload()
   }
+}
+
+// Renvoi de la réservation en attente : appelé à chaque reconnexion (ready du flux SSE, retour du réseau).
+function flushQueued() {
+  if (queued.value) send(queued.value)
+}
+
+function cancelQueued() {
+  if (screening.value) clearPending(screening.value.id)
+  queued.value = null
+  notice.value = 'Réservation en attente annulée.'
 }
 
 async function cancel() {
@@ -314,6 +360,15 @@ const formatDate = (date: string) =>
           ✅ Réservé au nom de <strong>{{ booking.name }}</strong> : {{ booking.seats.join(', ') }}
         </p>
         <button class="btn" @click="cancel">Annuler la réservation</button>
+      </template>
+
+      <template v-else-if="queued">
+        <p class="queued" role="status">
+          ⏳ Réservation en attente : <strong>{{ queued.seats.join(', ') }}</strong> au nom de
+          <strong>{{ queued.contact.name }}</strong>. Le service est indisponible : elle sera envoyée automatiquement
+          dès son retour.
+        </p>
+        <button class="btn" :disabled="saving" @click="cancelQueued">Annuler l'envoi</button>
       </template>
 
       <form v-else class="form" @submit.prevent="reserve">
@@ -591,6 +646,10 @@ h1 {
 
 .field-error {
   color: var(--danger);
+}
+
+.queued {
+  color: var(--star);
 }
 
 .success {
