@@ -167,3 +167,35 @@ export interface SearchResponse {
 // signal : permet d'annuler l'appel (AbortController) quand la saisie change.
 export const searchMovies = (q: string, signal: AbortSignal) =>
   request<SearchResponse>(`/movies/search?${new URLSearchParams({ q })}`, { signal })
+
+// --- Authentification et « Mes séances » -------------------------------------------------------
+// Session dans un cookie httpOnly posé par l'API : le front n'y touche jamais, il est envoyé avec chaque appel.
+
+export interface User {
+  id: string
+  email: string
+  name: string
+}
+
+export const getMe = () => request<User>('/auth/me')
+
+export const login = (email: string, password: string) =>
+  request<User>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
+
+export const register = (email: string, password: string, name: string) =>
+  request<User>('/auth/register', { method: 'POST', body: JSON.stringify({ email, password, name }) })
+
+export const logout = () => request<void>('/auth/logout', { method: 'POST' })
+
+export interface MyBooking {
+  bookingId: string
+  screeningId: string
+  date: string
+  time: string
+  upcoming: boolean
+  movie: { _id: string; title: string; poster?: string }
+  seats: string[]
+  name: string
+}
+
+export const listMyBookings = () => request<MyBooking[]>('/screenings/mine')

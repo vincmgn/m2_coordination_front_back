@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { RouterLink, RouterView } from 'vue-router'
+import { RouterLink, RouterView, useRouter } from 'vue-router'
+import { useAuth } from '@/composables/useAuth'
+
+const router = useRouter()
+const { user, logout } = useAuth()
+
+async function signOut() {
+  await logout()
+  router.push('/')
+}
 </script>
 
 <template>
@@ -7,6 +16,11 @@ import { RouterLink, RouterView } from 'vue-router'
     <div class="container header-inner">
       <RouterLink to="/" class="logo">🎬 Movies</RouterLink>
       <nav class="nav">
+        <template v-if="user">
+          <RouterLink to="/mes-seances" class="btn">Mes séances</RouterLink>
+          <button class="btn" :title="user.email" @click="signOut">Déconnexion ({{ user.name }})</button>
+        </template>
+        <RouterLink v-else to="/connexion" class="btn">Connexion</RouterLink>
         <RouterLink to="/movies/new" class="btn btn-primary">+ Ajouter un film</RouterLink>
       </nav>
     </div>
@@ -36,6 +50,8 @@ import { RouterLink, RouterView } from 'vue-router'
 
 .nav {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
   gap: 0.5rem;
 }
 

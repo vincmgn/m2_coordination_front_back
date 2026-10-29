@@ -3,6 +3,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { connectDB, closeDB } from "./db.js";
 import { HttpError } from "./http-error.js";
 import abRouter, { ensureAbIndexes } from "./routes/ab.js";
+import authRouter, { ensureAuthIndexes } from "./routes/auth.js";
 import moviesRouter from "./routes/movies.js";
 import screeningsRouter, { ensureScreeningIndexes } from "./routes/screenings.js";
 
@@ -36,6 +37,11 @@ app.get("/", (_req: Request, res: Response) => {
       { method: "POST", path: "/movies", description: "Créer un film (title obligatoire)" },
       { method: "PUT", path: "/movies/:id", description: "Modifier les champs envoyés" },
       { method: "DELETE", path: "/movies/:id", description: "Supprimer un film" },
+      { method: "POST", path: "/auth/register", description: "Créer un compte { email, password, name } et se connecter" },
+      { method: "POST", path: "/auth/login", description: "Se connecter { email, password } (cookie session)" },
+      { method: "POST", path: "/auth/logout", description: "Se déconnecter" },
+      { method: "GET", path: "/auth/me", description: "Utilisateur connecté (401 sinon)" },
+      { method: "GET", path: "/screenings/mine", description: "Mes séances : réservations du compte connecté" },
       { method: "GET", path: "/screenings?movieId=", description: "Séances à venir d'un film et places libres" },
       { method: "GET", path: "/screenings/:id", description: "Plan de salle et sièges réservés" },
       { method: "GET", path: "/screenings/:id/events", description: "Flux SSE : sièges réservés / libérés en direct" },
@@ -51,6 +57,7 @@ app.get("/", (_req: Request, res: Response) => {
 app.use("/movies", moviesRouter);
 app.use("/screenings", screeningsRouter);
 app.use("/ab", abRouter);
+app.use("/auth", authRouter);
 
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: `Route introuvable : ${req.method} ${req.path}` });
@@ -76,6 +83,7 @@ try {
   await connectDB();
   await ensureScreeningIndexes();
   await ensureAbIndexes();
+  await ensureAuthIndexes();
 } catch (err) {
   console.error("Connexion à MongoDB impossible :", (err as Error).message);
   process.exit(1);

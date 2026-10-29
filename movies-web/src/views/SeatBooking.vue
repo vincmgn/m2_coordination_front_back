@@ -23,6 +23,7 @@ import {
   type PendingBooking,
 } from '@/bookingDraft'
 import { trackExposure } from '@/composables/trackExposure'
+import { useAuth } from '@/composables/useAuth'
 
 const MAX_SEATS = 10
 const FALLBACK_RELOAD_MS = 30_000
@@ -39,9 +40,11 @@ const viewers = ref(0)
 const live = ref<'connexion' | 'en direct' | 'interrompu'>('connexion')
 const notice = ref<string | null>(null)
 // Coordonnées pré-remplies avec le brouillon gardé dans le navigateur (voir bookingDraft.ts).
+// Connecté sans brouillon : nom et e-mail repris du compte (la réservation ira dans « Mes séances »).
+const { user } = useAuth()
 const draft = loadContact()
-const name = ref(draft?.name ?? '')
-const email = ref(draft?.email ?? '')
+const name = ref(draft?.name ?? user.value?.name ?? '')
+const email = ref(draft?.email ?? user.value?.email ?? '')
 const phone = ref(draft?.phone ?? '')
 // Même règle que l'API : 8 à 15 chiffres une fois espaces, points, tirets et parenthèses retirés.
 const phoneValid = computed(() => /^\+?\d{8,15}$/.test(phone.value.replace(/[\s.()-]/g, '')))
@@ -376,6 +379,10 @@ const formatDate = (date: string) =>
           <strong>{{ selected.size ? sortedSelection.join(', ') : 'Aucun siège sélectionné' }}</strong>
           <span v-if="selected.size" class="muted"> ({{ selected.size }} place{{ selected.size > 1 ? 's' : '' }})</span>
         </p>
+        <p v-if="!user" class="muted hint">
+          <RouterLink :to="{ name: 'login', query: { redirect: `/seances/${screening.id}` } }">Connectez-vous</RouterLink>
+          pour retrouver cette réservation dans « Mes séances ».
+        </p>
         <label class="field">
           <span>Nom</span>
           <input v-model="name" required maxlength="60" autocomplete="name" placeholder="Votre nom" />
@@ -646,6 +653,10 @@ h1 {
 
 .field-error {
   color: var(--danger);
+}
+
+.hint {
+  font-size: 0.85rem;
 }
 
 .queued {

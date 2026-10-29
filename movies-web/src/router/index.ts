@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import MoviesList from '@/views/MoviesList.vue'
+import { useAuth } from '@/composables/useAuth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -19,9 +20,23 @@ const router = createRouter({
       component: () => import('@/views/SeatBooking.vue'),
       props: true,
     },
+    { path: '/connexion', name: 'login', component: () => import('@/views/LoginView.vue') },
+    {
+      path: '/mes-seances',
+      name: 'my-screenings',
+      component: () => import('@/views/MyScreenings.vue'),
+      meta: { requiresAuth: true },
+    },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
   scrollBehavior: () => ({ top: 0 }),
+})
+
+// Pages réservées aux comptes connectés : sinon, détour par la connexion puis retour à la page demandée.
+router.beforeEach(async (to) => {
+  const { user, load } = useAuth()
+  await load()
+  if (to.meta.requiresAuth && !user.value) return { name: 'login', query: { redirect: to.fullPath } }
 })
 
 export default router

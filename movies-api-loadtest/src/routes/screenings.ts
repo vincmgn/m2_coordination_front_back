@@ -4,6 +4,7 @@ import { MongoBulkWriteError, ObjectId } from "mongodb";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
 import { recordConversion } from "./ab.js";
+import { currentUser, requireUser } from "./auth.js";
 
 // Réservation de places de cinéma (équivalent des créneaux : un siège d'une séance = une place réservable une seule fois).
 //
@@ -36,6 +37,7 @@ interface Reservation {
   phone: string;
   bookingId: ObjectId;
   requestId?: string;
+  userId?: ObjectId; // compte connecté au moment de la réservation (facultatif)
   createdAt: Date;
 }
 
@@ -47,6 +49,7 @@ export async function ensureScreeningIndexes() {
   await reservations().createIndex({ screeningId: 1, seat: 1 }, { unique: true });
   await reservations().createIndex({ screeningId: 1, bookingId: 1 });
   await reservations().createIndex({ requestId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } });
+  await reservations().createIndex({ userId: 1 }, { partialFilterExpression: { userId: { $exists: true } } });
 }
 
 async function findByRequest(screeningId: string, requestId: string) {
@@ -163,6 +166,44 @@ router.get("/", async (req, res) => {
   res.json(list.map((s) => ({ ...s, capacity: CAPACITY, available: CAPACITY - (taken.get(s.id) ?? 0) })));
 });
 
+// GET /screenings/mine : réservations du compte connecté (« Mes séances »), passées comprises, de la plus proche à la plus ancienne.
+// Déclarée avant /:id, sinon « mine » serait pris pour un identifiant de séance.
+router.get("/mine", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const user = await requireUser(req);
+  const bookings = await reservations()
+    .aggregate<{ _id: ObjectId; screeningId: string; seats: string[]; name: string; createdAt: Date }>([
+      { $match: { userId: user._id } },
+      { $group: { _id: "$bookingId", screeningId: { $first: "$screeningId" }, seats: { $push: "$seat" }, name: { $first: "$name" }, createdAt: { $first: "$createdAt" } } },
+    ])
+    .toArray();
+
+  const movieIds = [...new Set(bookings.map((b) => b.screeningId.slice(0, 24)))].map((id) => new ObjectId(id));
+  const titles = new Map(
+    (await movies().find({ _id: { $in: movieIds } }, { projection: { title: 1, poster: 1 } }).toArray()).map((m) => [String(m._id), m]),
+  );
+  const now = parisNow().dateTime;
+  const list = bookings.map((b) => {
+    const [, movieId, y, m, d, hh, mm] = b.screeningId.match(/^([0-9a-f]{24})-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/)!;
+    const date = `${y}-${m}-${d}`;
+    const time = `${hh}:${mm}`;
+    const movie = titles.get(movieId!);
+    return {
+      bookingId: b._id,
+      screeningId: b.screeningId,
+      date,
+      time,
+      upcoming: `${date}T${time}` > now,
+      movie: { _id: movieId, title: movie?.title ?? "Film supprimé", poster: movie?.poster },
+      seats: b.seats.sort((a, z) => a[0]!.localeCompare(z[0]!) || Number(a.slice(1)) - Number(z.slice(1))),
+      name: b.name,
+    };
+  });
+  // À venir d'abord (la plus proche en premier), puis passées (la plus récente en premier).
+  list.sort((a, b) => Number(b.upcoming) - Number(a.upcoming) || (a.upcoming ? 1 : -1) * `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+  res.json(list);
+});
+
 // GET /screenings/:id : la séance, le plan de salle et les sièges déjà réservés.
 router.get("/:id", async (req, res) => {
   const screening = await findScreening(req.params.id);
@@ -231,12 +272,15 @@ router.post("/:id/reservations", async (req, res) => {
     }
   }
 
+  // Connecté : la réservation est rattachée au compte et apparaît dans « Mes séances ».
+  const userId = (await currentUser(req))?._id;
+
   // Tous les sièges d'une réservation ou aucun : en cas de conflit, on supprime ceux déjà insérés.
   const bookingId = new ObjectId();
   const createdAt = new Date();
   try {
     await reservations().insertMany(
-      seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt, ...(requestId && { requestId }) })),
+      seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt, ...(requestId && { requestId }), ...(userId && { userId }) })),
       { ordered: false },
     );
   } catch (e) {

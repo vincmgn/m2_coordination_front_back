@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-const props = defineProps<{ src?: string; title: string }>()
+// decorative : le titre est déjà écrit à côté (carte, liste) ; l'affiche est alors ignorée par les lecteurs d'écran
+// pour ne pas annoncer le titre deux fois.
+const props = defineProps<{ src?: string; title: string; decorative?: boolean }>()
 
 // Beaucoup d'affiches du dataset ne répondent plus : on affiche alors un emplacement neutre.
 const broken = ref(false)
@@ -12,7 +14,8 @@ watch(
 </script>
 
 <template>
-  <img v-if="src && !broken" :src="src" :alt="`Affiche de ${title}`" loading="lazy" @error="broken = true" />
+  <img v-if="src && !broken" :src="src" :alt="decorative ? '' : `Affiche de ${title}`" loading="lazy" @error="broken = true" />
+  <div v-else-if="decorative" class="placeholder" aria-hidden="true">🎞️</div>
   <div v-else class="placeholder" role="img" :aria-label="`Pas d'affiche pour ${title}`">🎞️</div>
 </template>
 

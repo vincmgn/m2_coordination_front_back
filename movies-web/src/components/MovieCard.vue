@@ -8,7 +8,7 @@ defineProps<{ movie: MovieSummary }>()
 
 <template>
   <RouterLink :to="`/movies/${movie._id}`" class="card">
-    <MoviePoster :src="movie.poster" :title="movie.title" />
+    <MoviePoster :src="movie.poster" :title="movie.title" decorative />
     <div class="info">
       <h3 class="title">{{ movie.title }}</h3>
       <p class="meta muted">
