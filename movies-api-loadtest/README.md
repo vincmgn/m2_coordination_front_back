@@ -246,7 +246,7 @@ Tous les tests tournent sur une base MongoDB jetable (`npm run seed`, 21 349 fil
 
 ## Déploiement et rollback (Docker Compose)
 
-`docker-compose.yml` simule un serveur de production : l'API tourne dans une **image versionnée** (`movies-api:v1`, `v2`…) sur http://localhost:8080, MongoDB garde ses données dans le **volume persistant** `mongo-data` (port 27018). Changer de version ne recrée que le conteneur `api` : les données ne sont jamais touchées.
+`docker-compose.yml` lance 3 conteneurs : **`movies-db`** (MongoDB), **`movies-api`** (l'API) et **`movies-web`** (le front Vue servi par nginx sur http://localhost:8081, qui relaie `/api` vers l'API). `docker compose up -d --build` démarre le tout. Il simule un serveur de production : l'API tourne dans une **image versionnée** (`movies-api:v1`, `v2`…) sur http://localhost:8080, MongoDB garde ses données dans le **volume persistant** `mongo-data` (port 27018). Changer de version ne recrée que le conteneur `api` : les données ne sont jamais touchées.
 
 ```bash
 npm run demo:rollback          # démonstration complète (voir ci-dessous)

@@ -11,6 +11,7 @@ import {
   type ScreeningDetail,
 } from '@/api'
 import { useExperiment } from '@/composables/useExperiment'
+import { clearDraft, loadContact, loadSeats, saveContact, saveSeats } from '@/bookingDraft'
 import { trackExposure } from '@/composables/trackExposure'
 
 const MAX_SEATS = 10
@@ -27,9 +28,29 @@ const justTaken = ref(new Set<string>()) // sièges réservés à l'instant par 
 const viewers = ref(0)
 const live = ref<'connexion' | 'en direct' | 'interrompu'>('connexion')
 const notice = ref<string | null>(null)
-const name = ref('')
+// Coordonnées pré-remplies avec le brouillon gardé dans le navigateur (voir bookingDraft.ts).
+const draft = loadContact()
+const name = ref(draft?.name ?? '')
+const email = ref(draft?.email ?? '')
+const phone = ref(draft?.phone ?? '')
+// Même règle que l'API : 8 à 15 chiffres une fois espaces, points, tirets et parenthèses retirés.
+const phoneValid = computed(() => /^\+?\d{8,15}$/.test(phone.value.replace(/[\s.()-]/g, '')))
+const contactValid = computed(() => !!name.value.trim() && !!email.value.trim() && phoneValid.value)
 const booking = ref<Booking | null>(null)
 const saving = ref(false)
+
+// Brouillon : chaque saisie est gardée, pour ne rien perdre si l'API est hors ligne ou la page rechargée.
+watch([name, email, phone], ([n, e, p]) => saveContact({ name: n, email: e, phone: p }))
+watch(selected, (seats) => screening.value && !booking.value && saveSeats(screening.value.id, [...seats]))
+// Sélection restaurée dès que la séance est lue (au chargement ou au retour de l'API), sans les sièges pris entre-temps.
+watch(
+  () => screening.value?.id,
+  (id) => {
+    if (!id || selected.value.size) return
+    const seats = loadSeats(id).filter((seat) => !taken.value.has(seat))
+    if (seats.length) selected.value = new Set(seats)
+  },
+)
 
 // Test A/B bouton_reserver_v1 : seul le texte du bouton change (voir movies-api-loadtest/src/routes/ab.ts).
 const { variant, counted } = useExperiment()
@@ -62,7 +83,11 @@ async function reload() {
       error.value = null
     }
   } catch (e) {
-    notice.value = `Actualisation impossible : ${(e as Error).message}`
+    // API hors ligne (5xx du proxy) ou pas de réseau : message clair, le brouillon reste gardé.
+    const offline = !(e instanceof ApiError) || e.status >= 500
+    notice.value = offline
+      ? 'Service indisponible, vos informations sont gardées.'
+      : `Actualisation impossible : ${(e as Error).message}`
   } finally {
     running = false
   }
@@ -183,18 +208,27 @@ watch(
 
 // Seule la réponse du POST confirme une réservation personnelle ; le flux SSE ne fait qu'informer.
 async function reserve() {
-  if (!screening.value || !selected.value.size || !name.value.trim()) return
+  if (!screening.value || !selected.value.size || !contactValid.value) return
   saving.value = true
   notice.value = null
   for (const seat of selected.value) pending.add(seat)
   try {
-    booking.value = await reserveSeats(screening.value.id, sortedSelection.value, name.value.trim(), counted.value)
+    booking.value = await reserveSeats(
+      screening.value.id,
+      sortedSelection.value,
+      { name: name.value.trim(), email: email.value.trim(), phone: phone.value.trim() },
+      counted.value,
+    )
+    clearDraft(screening.value.id)
     selected.value = new Set()
     notice.value = 'Votre réservation est confirmée.'
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
       pending.clear()
       dropFromSelection(Array.isArray(e.body?.seats) ? (e.body.seats as string[]) : [])
+    } else if ((e instanceof ApiError && e.status >= 500) || !navigator.onLine) {
+      // API hors ligne (le proxy répond 5xx) ou navigateur sans réseau : la réservation n'a pas eu lieu, le brouillon est gardé.
+      notice.value = 'Service indisponible : vos informations sont gardées, réessayez dans un instant.'
     } else if (e instanceof ApiError) {
       notice.value = e.message
     } else {
@@ -291,6 +325,27 @@ const formatDate = (date: string) =>
           <span>Nom</span>
           <input v-model="name" required maxlength="60" autocomplete="name" placeholder="Votre nom" />
         </label>
+        <label class="field">
+          <span>E-mail</span>
+          <input v-model="email" type="email" required maxlength="254" autocomplete="email" placeholder="vous@exemple.fr" />
+        </label>
+        <label class="field">
+          <span>Téléphone</span>
+          <input
+            v-model="phone"
+            type="tel"
+            required
+            maxlength="20"
+            autocomplete="tel"
+            inputmode="tel"
+            placeholder="06 12 34 56 78"
+            :aria-invalid="!!phone && !phoneValid"
+            aria-describedby="phone-error"
+          />
+          <small v-if="phone && !phoneValid" id="phone-error" class="field-error">
+            Numéro invalide : 8 à 15 chiffres, ex. 06 12 34 56 78
+          </small>
+        </label>
         <!-- Squelette de la taille du bouton tant que la variante est inconnue : jamais de « Réserver » provisoire. -->
         <div v-if="variant === null" class="btn btn-skeleton" aria-busy="true">&nbsp;</div>
         <button
@@ -298,7 +353,7 @@ const formatDate = (date: string) =>
           ref="cta"
           type="submit"
           class="btn btn-primary"
-          :disabled="!selected.size || !name.trim() || saving"
+          :disabled="!selected.size || !contactValid || saving"
         >
           {{ saving ? 'Réservation…' : ctaLabel }}
         </button>
@@ -528,6 +583,14 @@ h1 {
   gap: 0.3rem;
   font-size: 0.85rem;
   color: var(--muted);
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field-error {
+  color: var(--danger);
 }
 
 .success {

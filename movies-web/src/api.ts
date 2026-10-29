@@ -115,10 +115,16 @@ export const listScreenings = (movieId: string) => request<Screening[]>(`/screen
 export const getScreening = (id: string) => request<ScreeningDetail>(`/screenings/${id}`)
 
 // measure : le navigateur participe au test A/B ; sans lui (mode de secours), le back n'attribue pas la réservation.
-export const reserveSeats = (id: string, seats: string[], name: string, measure = false) =>
+export interface Contact {
+  name: string
+  email: string
+  phone: string
+}
+
+export const reserveSeats = (id: string, seats: string[], contact: Contact, measure = false) =>
   request<Booking>(`/screenings/${id}/reservations`, {
     method: 'POST',
-    body: JSON.stringify({ seats, name }),
+    body: JSON.stringify({ seats, ...contact }),
     headers: measure ? { 'X-AB-Measure': '1' } : {},
   })
 

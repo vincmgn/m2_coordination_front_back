@@ -6,6 +6,7 @@ Front Vue 3 + TypeScript + Vite pour l'API [`movies-api-loadtest`](../movies-api
 - **Détail** d'un film, avec modification et suppression.
 - **Formulaire** de création et de modification.
 - **Réservation de places** (`/seances/:id`) : plan de salle synchronisé en temps réel par SSE entre tous les onglets ouverts (voir le README de l'API pour le contrat du flux). Pour tester : ouvrir la même séance dans deux onglets, réserver dans l'un, l'autre se met à jour sans rechargement.
+- **Brouillon de réservation** (`src/bookingDraft.ts`) : nom, e-mail, téléphone et sièges sélectionnés sont gardés dans le `localStorage` ; si l'API est hors ligne ou la page rechargée, rien n'est perdu. Effacé après une réservation confirmée.
 - **Test A/B du bouton de réservation** : « Réserver » (A) ou « Choisir cette place » (B), seul le texte change. La variante vient de l'API (`composables/useExperiment.ts`, squelette tant qu'elle est inconnue, A hors test en cas d'échec) ; l'exposition part quand le bouton est visible (`composables/trackExposure.ts`). Détails dans le README de l'API.
 
 ## Lancement

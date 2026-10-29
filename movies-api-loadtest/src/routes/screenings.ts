@@ -32,6 +32,8 @@ interface Reservation {
   screeningId: string;
   seat: string;
   name: string;
+  email: string;
+  phone: string;
   bookingId: ObjectId;
   createdAt: Date;
 }
@@ -203,19 +205,24 @@ router.get("/:id/events", async (req, res) => {
   });
 });
 
-// POST /screenings/:id/reservations { seats: ["C7", "C8"], name: "Alice" }
+// POST /screenings/:id/reservations { seats: ["C7", "C8"], name: "Alice", email: "alice@example.com", phone: "06 12 34 56 78" }
 router.post("/:id/reservations", async (req, res) => {
   const screening = await findScreening(req.params.id);
   const seats = parseSeats(req.body?.seats);
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   if (!name || name.length > 60) throw new HttpError(400, 'Le champ "name" est requis (60 caractères maximum)');
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Le champ "email" est requis et doit être valide');
+  // Téléphone gardé sans espaces, points ni tirets : 8 à 15 chiffres, « + » initial facultatif.
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.replace(/[\s.()-]/g, "") : "";
+  if (!/^\+?\d{8,15}$/.test(phone)) throw new HttpError(400, 'Le champ "phone" est requis (8 à 15 chiffres, ex. 06 12 34 56 78)');
 
   // Tous les sièges d'une réservation ou aucun : en cas de conflit, on supprime ceux déjà insérés.
   const bookingId = new ObjectId();
   const createdAt = new Date();
   try {
     await reservations().insertMany(
-      seats.map((seat) => ({ screeningId: screening.id, seat, name, bookingId, createdAt })),
+      seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt })),
       { ordered: false },
     );
   } catch (e) {
