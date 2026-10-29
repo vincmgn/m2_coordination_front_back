@@ -87,6 +87,48 @@ npm run typecheck  # vérification des types sans compiler
 curl -N http://localhost:3000/screenings/<id de séance>/events   # observer le flux
 ```
 
+## Test A/B du bouton de réservation
+
+Code : `src/routes/ab.ts` (+ conversion dans `src/routes/screenings.ts`). Cours A/B testing et TP MediSlot, transposés aux places de cinéma.
+
+| Variante | Libellé |
+| --- | --- |
+| A (contrôle) | « Réserver » |
+| B (traitement) | « Choisir cette place » (« Choisir ces places » si plusieurs sièges) |
+
+**Seul le texte change** : même couleur, même place, même action. Clé d'expérience : `bouton_reserver_v1` (nouvelle version du test = nouvelle clé).
+
+| Méthode | Route | Description |
+| --- | --- | --- |
+| GET | `/ab/assignment` | Variante du navigateur ; pose le cookie `ab_visitor` à la première visite ; `Cache-Control: no-store` |
+| POST | `/ab/exposure` | Le bouton a été vu → 204 ; une seule exposition par navigateur ; 400 sans cookie |
+| GET | `/ab/metrics` | Effectifs par variante, SRM, écart, IC 95 %, p-value, décision |
+
+**Fonctionnement**
+
+- **Affectation (back)** : `SHA-256("bouton_reserver_v1:" + ab_visitor)`, premier octet 0-127 → A, 128-255 → B. Stable au rechargement, ~50/50. Unité = le navigateur (cookie UUID `httpOnly`, 390 jours, jamais prolongé). Un document par navigateur dans `ab_assignments`.
+- **Exposition (front → back)** : envoyée quand le bouton est visible à 50 % et qu'il reste au moins une place libre. Le back la déduplique en une écriture atomique (`exposed: false` → `true`, première date conservée). Le client n'envoie jamais sa variante.
+- **Conversion (back)** : enregistrée après une réservation réussie (jamais au clic, jamais sur un 409), si le navigateur a été exposé dans les 24 h et que le front envoie `X-AB-Measure: 1`. Plusieurs réservations = un seul navigateur converti (`bookings` compte les réservations).
+- **Mode de secours** : si `/ab/assignment` échoue ou dépasse 800 ms, le front affiche A, sans exposition ni attribution. La réservation reste possible.
+- **Interrupteur** : `AB_ENABLED=false` (`.env` ou `docker-compose.yml`) → A pour tous, aucune nouvelle mesure, données conservées.
+
+**Fiche d'expérience** (constante `PLAN`, fixée avant le lancement)
+
+- Hypothèse : B augmente d'au moins 2 points le taux de réservations confirmées.
+- Métrique : navigateurs convertis / navigateurs exposés.
+- Taille : n ≈ 16 × p(1 − p) / δ² = 16 × 0,1 × 0,9 / 0,02² = **3 600 par variante** ; durée **14 jours**. À ajuster au taux et au trafic réels.
+- Décision (`/ab/metrics`, seulement à la fin du plan) : SRM (khi-deux, p < 0,001) → aucune conclusion ; IC entièrement > 0 → déployer B ; IC étroit autour de 0 → abandonner B ; sinon → itérer.
+
+Limites : garde-fous (annulations, 409, temps d'affichage) non mesurés ; les sièges sont partagés entre A et B (groupes pas totalement indépendants).
+
+```bash
+curl -c ab.txt http://localhost:3000/ab/assignment          # affectation (cookie dans ab.txt)
+curl -b ab.txt -X POST http://localhost:3000/ab/exposure     # 204, rejouable sans double comptage
+curl http://localhost:3000/ab/metrics                        # indicateurs
+```
+
+Avant un vrai lancement, vider `ab_assignments` (les visites de développement fausseraient la date de départ).
+
 ## Exemples
 
 ```bash

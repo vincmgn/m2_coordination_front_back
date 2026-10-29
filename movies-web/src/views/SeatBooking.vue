@@ -10,11 +10,11 @@ import {
   type Booking,
   type ScreeningDetail,
 } from '@/api'
+import { useExperiment } from '@/composables/useExperiment'
+import { trackExposure } from '@/composables/trackExposure'
 
 const MAX_SEATS = 10
-// Relecture de secours (filet de sécurité) : rattrape une notification perdue. Mettre 0 pour tester SSE seul.
 const FALLBACK_RELOAD_MS = 30_000
-// Délai avant de recréer le flux quand le navigateur a abandonné la reconnexion (voir connect()).
 const RECONNECT_MS = 3_000
 
 const props = defineProps<{ id: string }>()
@@ -31,16 +31,18 @@ const name = ref('')
 const booking = ref<Booking | null>(null)
 const saving = ref(false)
 
+// Test A/B bouton_reserver_v1 : seul le texte du bouton change (voir movies-api-loadtest/src/routes/ab.ts).
+const { variant, counted } = useExperiment()
+const cta = ref<HTMLButtonElement | null>(null)
+const ctaLabel = computed(() => {
+  if (variant.value !== 'B') return 'Réserver'
+  return selected.value.size > 1 ? 'Choisir ces places' : 'Choisir cette place'
+})
+
 let source: EventSource | null = null
 let timer: ReturnType<typeof setInterval> | undefined
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined
-// Sièges que cette page est en train de réserver : la relecture peut les voir « réservés » avant la réponse
-// du POST, il ne faut pas les présenter comme réservés par quelqu'un d'autre.
 const pending = new Set<string>()
-
-// --- Relecture sérialisée (stratégie « relire après notification ») -------------------------------
-// Deux notifications proches ne lancent pas deux GET concurrents : une seule lecture à la fois, et une
-// relecture de plus si une demande est arrivée pendant la lecture en cours.
 let running = false
 let dirty = false
 let stopped = false
@@ -72,7 +74,6 @@ function applyTaken(next: string[]) {
   const byOthers = next.filter((s) => !taken.value.has(s) && !pending.has(s) && !mine.has(s))
   flash(byOthers)
   taken.value = nextSet
-  // Un siège sélectionné ici vient d'être réservé ailleurs : on le retire de la sélection et on prévient.
   dropFromSelection([...selected.value].filter((s) => nextSet.has(s) && !pending.has(s)))
 }
 
@@ -94,9 +95,6 @@ function flash(seats: string[]) {
   }, 1500)
 }
 
-// --- Flux SSE --------------------------------------------------------------------------------------
-// Un seul EventSource par page. ready (à chaque abonnement, donc après une reconnexion) et seat-updated
-// déclenchent une relecture : l'écran affiche toujours l'état renvoyé par l'API.
 function connect(id: string) {
   clearTimeout(reconnectTimer)
   source?.close()
@@ -173,6 +171,16 @@ const sortedSelection = computed(() =>
 )
 const available = computed(() => (screening.value ? screening.value.room.capacity - taken.value.size : 0))
 
+// Exposition : le bouton est rendu (après la mise à jour du DOM), il reste au moins une place libre,
+// et il est visible à l'écran. Rien en mode de secours (counted = false).
+watch(
+  [cta, counted, () => available.value > 0],
+  ([el, isCounted, anyFree], _old, onCleanup) => {
+    if (el && isCounted && anyFree) onCleanup(trackExposure(el))
+  },
+  { flush: 'post' },
+)
+
 // Seule la réponse du POST confirme une réservation personnelle ; le flux SSE ne fait qu'informer.
 async function reserve() {
   if (!screening.value || !selected.value.size || !name.value.trim()) return
@@ -180,18 +188,16 @@ async function reserve() {
   notice.value = null
   for (const seat of selected.value) pending.add(seat)
   try {
-    booking.value = await reserveSeats(screening.value.id, sortedSelection.value, name.value.trim())
+    booking.value = await reserveSeats(screening.value.id, sortedSelection.value, name.value.trim(), counted.value)
     selected.value = new Set()
     notice.value = 'Votre réservation est confirmée.'
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
-      // Quelqu'un a été plus rapide : les sièges en conflit sont retirés, le reste de la sélection est gardé.
       pending.clear()
       dropFromSelection(Array.isArray(e.body?.seats) ? (e.body.seats as string[]) : [])
     } else if (e instanceof ApiError) {
       notice.value = e.message
     } else {
-      // Réponse perdue (réseau) : l'API a peut-être enregistré la réservation.
       notice.value = 'Résultat incertain (réponse perdue) : vérifiez la salle avant de réessayer.'
     }
   } finally {
@@ -222,7 +228,8 @@ const formatDate = (date: string) =>
 </script>
 
 <template>
-  <RouterLink v-if="screening" :to="`/movies/${screening.movie._id}`" class="btn back">← {{ screening.movie.title }}</RouterLink>
+  <RouterLink v-if="screening" :to="`/movies/${screening.movie._id}`" class="btn back">← {{ screening.movie.title }}
+  </RouterLink>
 
   <p v-if="error" class="error">{{ error }}</p>
   <p v-else-if="!screening" class="muted">Chargement…</p>
@@ -236,7 +243,8 @@ const formatDate = (date: string) =>
       <p class="live" :class="live.replace(' ', '-')" role="status">
         <span class="dot" aria-hidden="true" />
         {{ live === 'en direct' ? 'En direct' : live === 'connexion' ? 'Connexion…' : 'Connexion interrompue…' }}
-        <span v-if="live === 'en direct' && viewers > 1" class="muted"> · {{ viewers }} personnes sur cette séance</span>
+        <span v-if="live === 'en direct' && viewers > 1" class="muted"> · {{ viewers }} personnes sur cette
+          séance</span>
       </p>
     </header>
 
@@ -245,18 +253,12 @@ const formatDate = (date: string) =>
       <div class="seats" role="group" :aria-label="`Plan de salle : ${available} places libres`">
         <div v-for="row in screening.room.rows" :key="row" class="row">
           <span class="row-label" aria-hidden="true">{{ row }}</span>
-          <button
-            v-for="n in screening.room.seatsPerRow"
-            :key="n"
-            type="button"
-            class="seat"
+          <button v-for="n in screening.room.seatsPerRow" :key="n" type="button" class="seat"
             :class="[seatState(`${row}${n}`), { flash: justTaken.has(`${row}${n}`), aisle: n === 4 || n === 10 }]"
             :disabled="seatState(`${row}${n}`) === 'taken' || seatState(`${row}${n}`) === 'mine' || !!booking"
             :aria-pressed="selected.has(`${row}${n}`)"
-            :aria-label="`${row}${n}, ${STATE_LABEL[seatState(`${row}${n}`)]}`"
-            :title="`${row}${n}`"
-            @click="toggle(`${row}${n}`)"
-          >
+            :aria-label="`${row}${n}, ${STATE_LABEL[seatState(`${row}${n}`)]}`" :title="`${row}${n}`"
+            @click="toggle(`${row}${n}`)">
             {{ n }}
           </button>
           <span class="row-label" aria-hidden="true">{{ row }}</span>
@@ -289,8 +291,16 @@ const formatDate = (date: string) =>
           <span>Nom</span>
           <input v-model="name" required maxlength="60" autocomplete="name" placeholder="Votre nom" />
         </label>
-        <button type="submit" class="btn btn-primary" :disabled="!selected.size || !name.trim() || saving">
-          {{ saving ? 'Réservation…' : 'Réserver' }}
+        <!-- Squelette de la taille du bouton tant que la variante est inconnue : jamais de « Réserver » provisoire. -->
+        <div v-if="variant === null" class="btn btn-skeleton" aria-busy="true">&nbsp;</div>
+        <button
+          v-else
+          ref="cta"
+          type="submit"
+          class="btn btn-primary"
+          :disabled="!selected.size || !name.trim() || saving"
+        >
+          {{ saving ? 'Réservation…' : ctaLabel }}
         </button>
       </form>
 
@@ -451,6 +461,7 @@ h1 {
 }
 
 @keyframes taken {
+
   0%,
   40% {
     background: var(--star);
@@ -503,6 +514,12 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.btn-skeleton {
+  background: var(--surface-2);
+  cursor: default;
+  animation: pulse 1.6s infinite;
 }
 
 .field {

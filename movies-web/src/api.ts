@@ -55,7 +55,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...(init?.headers as Record<string, string>) },
   })
   if (res.status === 204) return undefined as T
 
@@ -114,14 +114,38 @@ export const listScreenings = (movieId: string) => request<Screening[]>(`/screen
 
 export const getScreening = (id: string) => request<ScreeningDetail>(`/screenings/${id}`)
 
-export const reserveSeats = (id: string, seats: string[], name: string) =>
-  request<Booking>(`/screenings/${id}/reservations`, { method: 'POST', body: JSON.stringify({ seats, name }) })
+// measure : le navigateur participe au test A/B ; sans lui (mode de secours), le back n'attribue pas la réservation.
+export const reserveSeats = (id: string, seats: string[], name: string, measure = false) =>
+  request<Booking>(`/screenings/${id}/reservations`, {
+    method: 'POST',
+    body: JSON.stringify({ seats, name }),
+    headers: measure ? { 'X-AB-Measure': '1' } : {},
+  })
 
 export const cancelBooking = (id: string, bookingId: string) =>
   request<void>(`/screenings/${id}/reservations/${bookingId}`, { method: 'DELETE' })
 
 // Flux SSE de la séance : URL à passer à EventSource (même préfixe /api que les autres appels).
 export const screeningEventsUrl = (id: string) => `${BASE_URL}/screenings/${id}/events`
+
+// --- Test A/B ----------------------------------------------------------------------------------
+// Le back affecte la variante (cookie ab_visitor) et enregistre la conversion ; le front ne fait qu'afficher
+// la variante reçue et signaler l'exposition.
+
+export type Variant = 'A' | 'B'
+
+export interface AbAssignment {
+  experiment: string
+  enabled: boolean
+  variant: Variant
+  bucket?: number
+}
+
+export const getAssignment = (signal: AbortSignal) => request<AbAssignment>('/ab/assignment', { signal })
+
+// keepalive : la déclaration part même si la page se ferme juste après. Erreur ignorée : la mesure ne gêne jamais le visiteur.
+export const declareExposure = () =>
+  request<void>('/ab/exposure', { method: 'POST', keepalive: true }).catch(() => {})
 
 // --- Recherche réactive ------------------------------------------------------------------------
 

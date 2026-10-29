@@ -3,6 +3,7 @@ import { Router, type Response } from "express";
 import { MongoBulkWriteError, ObjectId } from "mongodb";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
+import { recordConversion } from "./ab.js";
 
 // Réservation de places de cinéma (équivalent des créneaux : un siège d'une séance = une place réservable une seule fois).
 //
@@ -229,6 +230,8 @@ router.post("/:id/reservations", async (req, res) => {
 
   // Enregistrer, puis notifier : l'événement ne part qu'après l'écriture réussie.
   publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "BOOKED" });
+  // Conversion A/B : après l'écriture réussie, jamais au clic. Une panne de la mesure ne fait pas échouer la réservation.
+  await recordConversion(req).catch((e) => console.error("Attribution A/B impossible :", e));
   res.status(201).json({ bookingId, screeningId: screening.id, seats, name });
 });
 
