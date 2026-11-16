@@ -11,7 +11,7 @@ defineProps<{ movie: MovieSummary }>()
     <MoviePoster :src="movie.poster" :title="movie.title" decorative />
     <div class="info">
       <h3 class="title">{{ movie.title }}</h3>
-      <p class="meta muted">
+      <p class="meta muted mono">
         <span>{{ movie.year ?? '—' }}</span>
         <span v-if="movie.imdb?.rating" class="rating">★ {{ movie.imdb.rating }}</span>
       </p>
@@ -24,29 +24,29 @@ defineProps<{ movie: MovieSummary }>()
 .card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) + 4px);
+  gap: 0.75rem;
+  border-radius: var(--radius);
   text-decoration: none;
+}
+
+.card :deep(img),
+.card :deep(.placeholder) {
   transition:
-    transform 0.15s,
-    box-shadow 0.15s;
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow);
-}
-
-.info {
-  padding: 0 0.25rem 0.25rem;
+/* Survol : l'affiche s'éclaire comme sous le projecteur. */
+.card:hover :deep(img),
+.card:hover :deep(.placeholder) {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .title {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: 1.05rem;
+  font-weight: 700;
   line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -56,9 +56,9 @@ defineProps<{ movie: MovieSummary }>()
 
 .meta {
   display: flex;
-  justify-content: space-between;
-  margin: 0.25rem 0 0;
-  font-size: 0.85rem;
+  gap: 0.75rem;
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
 }
 
 .rating {

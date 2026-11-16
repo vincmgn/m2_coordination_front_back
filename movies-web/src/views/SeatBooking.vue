@@ -320,8 +320,8 @@ const formatDate = (date: string) =>
   <section v-else class="booking">
     <header class="head">
       <div>
+        <p class="eyebrow">{{ formatDate(screening.date) }} · {{ screening.time }}</p>
         <h1>{{ screening.movie.title }}</h1>
-        <p class="muted when">{{ formatDate(screening.date) }} · {{ screening.time }}</p>
       </div>
       <p class="live" :class="live.replace(' ', '-')" role="status">
         <span class="dot" aria-hidden="true" />
@@ -332,7 +332,7 @@ const formatDate = (date: string) =>
     </header>
 
     <div class="room">
-      <div class="screen" aria-hidden="true">ÉCRAN</div>
+      <div class="screen" aria-hidden="true" />
       <div class="seats" role="group" :aria-label="`Plan de salle : ${available} places libres`">
         <div v-for="row in screening.room.rows" :key="row" class="row">
           <span class="row-label" aria-hidden="true">{{ row }}</span>
@@ -356,7 +356,7 @@ const formatDate = (date: string) =>
     </div>
 
     <aside class="panel">
-      <p class="muted">{{ available }} / {{ screening.room.capacity }} places libres</p>
+      <p class="muted mono"><span class="count">{{ available }}</span> / {{ screening.room.capacity }} places libres</p>
 
       <template v-if="booking">
         <p class="success">
@@ -449,13 +449,11 @@ const formatDate = (date: string) =>
 }
 
 h1 {
-  margin: 0;
-  font-size: clamp(1.4rem, 3.5vw, 2rem);
+  margin: 0.5rem 0 0;
 }
 
-.when {
-  margin: 0.25rem 0 0;
-  text-transform: capitalize;
+.count {
+  color: var(--text);
 }
 
 .live {
@@ -474,7 +472,7 @@ h1 {
 }
 
 .en-direct .dot {
-  background: #2fb36d;
+  background: var(--success);
   animation: pulse 1.6s infinite;
 }
 
@@ -491,22 +489,21 @@ h1 {
 .room {
   grid-area: room;
   overflow-x: auto;
-  padding: 1rem;
+  padding: 1.75rem 1rem 1.25rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: calc(var(--radius) + 4px);
 }
 
+/* L'écran éclaire la salle : barre ambre et halo vers les sièges. */
 .screen {
-  margin: 0 auto 1.5rem;
+  width: 70%;
   max-width: 420px;
-  padding: 0.3rem;
-  border-radius: 0 0 50% 50% / 0 0 100% 100%;
-  background: var(--surface-2);
-  color: var(--muted);
-  font-size: 0.75rem;
-  letter-spacing: 0.3em;
-  text-align: center;
+  height: 10px;
+  margin: 0 auto 2.25rem;
+  border-radius: 0 0 50% 50%;
+  background: var(--accent);
+  box-shadow: 0 12px 48px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .seats {
@@ -534,9 +531,10 @@ h1 {
   width: 1.9rem;
   height: 1.9rem;
   padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 6px 6px 3px 3px;
-  font-size: 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 7px 7px 4px 4px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
   cursor: pointer;
   transition:
     background 0.2s,
@@ -548,7 +546,7 @@ h1 {
 }
 
 .seat.free {
-  background: var(--surface-2);
+  background: var(--seat);
 }
 
 .seat.free:hover {
@@ -562,15 +560,16 @@ h1 {
 }
 
 .seat.taken {
-  background: var(--border);
+  background: transparent;
+  border-color: var(--border-strong);
   color: transparent;
   cursor: not-allowed;
 }
 
 .seat.mine {
-  background: #2fb36d;
-  border-color: #2fb36d;
-  color: #fff;
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--success-text);
 }
 
 .seat.flash {
@@ -581,7 +580,7 @@ h1 {
 
   0%,
   40% {
-    background: var(--star);
+    background: var(--hot);
     transform: scale(1.15);
   }
 }
@@ -664,7 +663,7 @@ h1 {
 }
 
 .success {
-  color: #2fb36d;
+  color: var(--success);
 }
 
 .notice {

@@ -52,7 +52,7 @@ const list = (values?: string[]) => values?.filter(Boolean).join(', ')
 
     <div class="content">
       <h1>{{ movie.title }}</h1>
-      <p class="meta muted">
+      <p class="meta muted mono">
         <span v-if="movie.year">{{ movie.year }}</span>
         <span v-if="movie.runtime">{{ movie.runtime }} min</span>
         <span v-if="movie.rated">{{ movie.rated }}</span>
@@ -116,8 +116,8 @@ const list = (values?: string[]) => values?.filter(Boolean).join(', ')
 
 h1 {
   margin: 0;
-  font-size: clamp(1.5rem, 4vw, 2.25rem);
-  line-height: 1.2;
+  font-size: clamp(2.75rem, 8vw, 6rem);
+  line-height: 0.88;
 }
 
 .meta {
@@ -142,14 +142,16 @@ h1 {
 }
 
 .tags li {
-  padding: 0.15rem 0.6rem;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
-  background: var(--surface-2);
   font-size: 0.85rem;
 }
 
 .plot {
-  max-width: 65ch;
+  max-width: 60ch;
+  font-size: 1.1rem;
+  color: var(--text-soft);
 }
 
 dl {

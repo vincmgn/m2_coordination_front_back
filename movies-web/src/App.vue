@@ -14,7 +14,7 @@ async function signOut() {
 <template>
   <header class="header">
     <div class="container header-inner">
-      <RouterLink to="/" class="logo">🎬 Movies</RouterLink>
+      <RouterLink to="/" class="logo"><span class="lamp" aria-hidden="true" />Movies</RouterLink>
       <nav class="nav">
         <template v-if="user">
           <RouterLink to="/mes-seances" class="btn">Mes séances</RouterLink>
@@ -36,7 +36,8 @@ async function signOut() {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
 }
 
@@ -56,13 +57,34 @@ async function signOut() {
 }
 
 .logo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-size: 1.25rem;
-  font-weight: 700;
+  font-stretch: 125%;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   text-decoration: none;
 }
 
+/* Lampe du projecteur. */
+.lamp {
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 24px var(--accent);
+}
+
+.nav .router-link-active:not(.btn-primary) {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+
 main {
-  padding-block: 1.5rem 3rem;
+  padding-block: 2.5rem 5rem;
 }
 </style>
 

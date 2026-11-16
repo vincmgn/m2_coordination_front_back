@@ -154,6 +154,8 @@ watch(
 </script>
 
 <template>
+  <h1>À l'affiche</h1>
+
   <section class="searchbar">
     <label for="search" class="label">Rechercher par titre, genre ou année</label>
     <div class="row">
@@ -208,6 +210,10 @@ watch(
 </template>
 
 <style scoped>
+h1 {
+  margin: 0 0 1.5rem;
+}
+
 .searchbar {
   margin-bottom: 0.5rem;
 }
@@ -225,8 +231,10 @@ watch(
 }
 
 .row input {
+  min-height: 52px;
+  padding: 0.7rem 1.25rem;
+  border-radius: 999px;
   font-size: 1.05rem;
-  padding: 0.7rem 1rem;
 }
 
 .status-row {
@@ -257,8 +265,8 @@ watch(
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: 2rem 1.25rem;
   transition: opacity 0.15s;
 }
 

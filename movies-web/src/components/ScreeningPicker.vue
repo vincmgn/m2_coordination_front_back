@@ -47,8 +47,8 @@ const dayLabel = (date: string) =>
           class="time"
           :class="{ full: s.available === 0 }"
         >
-          <strong>{{ s.time }}</strong>
-          <span class="muted">{{ s.available ? `${s.available} places` : 'Complet' }}</span>
+          <strong class="mono">{{ s.time }}</strong>
+          <span class="muted mono">{{ s.available ? `${s.available} places` : 'Complet' }}</span>
         </RouterLink>
       </div>
     </div>
@@ -62,7 +62,6 @@ const dayLabel = (date: string) =>
 
 h2 {
   margin: 0 0 0.75rem;
-  font-size: 1.2rem;
 }
 
 h3 {
@@ -82,17 +81,17 @@ h3 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 6.5rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
+  min-width: 7rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: var(--surface);
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
 }
 
 .time:hover {
   border-color: var(--accent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .time strong {

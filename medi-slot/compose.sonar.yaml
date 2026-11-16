@@ -1,0 +1,36 @@
+# Serveur SonarQube local pour le TP (séparé de l'application).
+# docker compose -f compose.sonar.yaml up -d  →  http://localhost:9000 (admin / admin au premier lancement)
+name: medislot-sonar
+services:
+  sonar-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: sonar
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: ${SONAR_DB_PASSWORD:-sonar-local-only}
+    volumes: ["sonar-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  sonarqube:
+    image: sonarqube:26.9.0.129388-community
+    depends_on:
+      sonar-db: {condition: service_healthy}
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONAR_DB_PASSWORD:-sonar-local-only}
+      # Poste de dev : évite d'exiger vm.max_map_count=524288 sur l'hôte WSL.
+      SONAR_SEARCH_JAVAADDITIONALOPTS: -Dnode.store.allow_mmap=false
+    ports: ["127.0.0.1:9000:9000"]
+    volumes:
+      - sonar-data:/opt/sonarqube/data
+      - sonar-extensions:/opt/sonarqube/extensions
+      - sonar-logs:/opt/sonarqube/logs
+volumes:
+  sonar-pgdata:
+  sonar-data:
+  sonar-extensions:
+  sonar-logs:

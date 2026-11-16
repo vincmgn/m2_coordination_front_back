@@ -82,7 +82,7 @@ h1 {
 }
 
 h2 {
-  font-size: 1.1rem;
+  margin: 2rem 0 1rem;
 }
 
 .list {
@@ -128,6 +128,8 @@ h2 {
 }
 
 .when {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
   text-transform: capitalize;
 }
 </style>
