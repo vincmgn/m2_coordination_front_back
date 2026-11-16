@@ -12,7 +12,7 @@ export const MESSAGES: Record<number, string> = {
 export const FALLBACK = "Le billet n'a pas pu être préparé. Réessayez dans un instant."
 export const OFFLINE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.'
 
-// Délai avant de libérer l'URL du blob : laisse au visualiseur PDF le temps de charger le fichier.
+// « Enregistrer » : délai avant de libérer l'URL du blob, le temps que le navigateur écrive le fichier.
 export const REVOKE_AFTER_MS = 60_000
 
 export class TicketError extends Error {

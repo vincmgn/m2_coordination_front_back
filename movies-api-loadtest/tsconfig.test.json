@@ -1,0 +1,6 @@
+{
+  // Vérification des types des tests (tsc ne compile que src/ vers dist/ avec tsconfig.json).
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true },
+  "include": ["src", "tests"]
+}

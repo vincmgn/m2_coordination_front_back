@@ -25,7 +25,7 @@ npm run dev        # nodemon + tsx : exécute src/*.ts directement, recharge à 
 npm run build      # compile src/ vers dist/ avec tsc
 npm start          # lance la version compilée (dist/index.js)
 
-npm run typecheck  # vérification des types sans compiler
+npm run typecheck  # vérification des types sans compiler (src/ et tests/)
 ```
 
 ## Endpoints
