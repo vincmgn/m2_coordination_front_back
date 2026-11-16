@@ -40,7 +40,7 @@ export async function ensureAuthIndexes() {
   await sessions().createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 }
 
-async function hashPassword(password: string) {
+export async function hashPassword(password: string) {
   const salt = randomBytes(16);
   const key = await scryptAsync(password, salt, 64);
   return `${salt.toString("hex")}:${key.toString("hex")}`;

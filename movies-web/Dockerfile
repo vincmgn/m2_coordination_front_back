@@ -4,6 +4,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
+# Commit du build : devient service.version dans les traces du navigateur.
+ARG GIT_SHA=local
+ENV VITE_GIT_SHA=${GIT_SHA}
 RUN npm run build
 
 FROM nginx:1.27-alpine

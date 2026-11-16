@@ -42,14 +42,24 @@ export interface MovieFilters {
 export type MovieInput = Pick<Movie, 'title' | 'year' | 'genres' | 'plot' | 'poster'>
 
 // Erreur renvoyée par l'API ({ error: "..." }) avec son code HTTP.
+// traceId : identifiant de la trace (en-tête X-Trace-Id), affiché « réf. … » pour que le support le recopie.
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly body: Record<string, unknown> | null = null,
+    readonly traceId = '',
   ) {
     super(message)
   }
+}
+
+// Message montré à l'utilisateur : celui de l'API pour un refus métier (4xx), un message générique pour une
+// panne (500), avec la référence de trace pour toute erreur serveur.
+function errorMessage(status: number, body: { error?: string } | null, traceId: string) {
+  let message = status === 500 ? 'Le service est momentanément indisponible.' : (body?.error ?? `Erreur HTTP ${status}`)
+  if (status >= 500 && traceId) message += ` (réf. ${traceId})`
+  return message
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -60,7 +70,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as T
 
   const body = await res.json().catch(() => null)
-  if (!res.ok) throw new ApiError(res.status, body?.error ?? `Erreur HTTP ${res.status}`, body)
+  if (!res.ok) {
+    const traceId = res.headers.get('X-Trace-Id') ?? ''
+    throw new ApiError(res.status, errorMessage(res.status, body, traceId), body, traceId)
+  }
   return body as T
 }
 
@@ -199,3 +212,12 @@ export interface MyBooking {
 }
 
 export const listMyBookings = () => request<MyBooking[]>('/screenings/mine')
+
+export interface BookingHistoryEvent {
+  type: string
+  at: string
+  label: string
+}
+
+export const getBookingHistory = (bookingId: string) =>
+  request<{ bookingId: string; events: BookingHistoryEvent[] }>(`/screenings/mine/${bookingId}/history`)

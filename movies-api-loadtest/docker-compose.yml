@@ -2,6 +2,7 @@
 # Conteneurs : movies-db, movies-api, movies-web. Front : http://localhost:8081
 # Changer de version de l'API ne recrée que le conteneur api : le volume mongo-data n'est jamais touché.
 # ⚠️ Ne jamais lancer `docker compose down -v` : -v supprime le volume, donc les données.
+# Traces (TP OpenTelemetry) : navigateur et API → collecteur → Jaeger, http://localhost:16686
 name: movies
 
 services:
@@ -28,21 +29,70 @@ services:
       MONGODB_DB: sample_mflix
       PORT: "3000"
       AB_ENABLED: "true" # "false" : tout le monde revient au bouton A, les données A/B sont conservées
+      # --- Traces : l'instrumentation automatique est chargée par --import dans l'image (cf. Dockerfile) ---
+      OTEL_SERVICE_NAME: movies-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_TRACES_SAMPLER: parentbased_always_on # suit la décision du navigateur ; trace tout ce qui arrive sans parent
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_RESOURCE_ATTRIBUTES: service.version=${GIT_SHA:-local},deployment.environment.name=formation
+      OTEL_NODE_ENABLED_INSTRUMENTATIONS: http,undici,express,mongodb # undici = fetch sortant ; dns, net, fs… : du bruit
+      OTEL_SEMCONV_STABILITY_OPT_IN: http # url.path et url.query séparés : le collecteur peut supprimer la requête seule
+      # --- TP OpenTelemetry : les trois tickets (passerelle SMS, « Mes séances », historique). "0" : comportement corrigé ---
+      TP_TICKETS: ${TP_TICKETS:-1}
+      SMS_GATEWAY_URL: http://sms-passerelle:4000
     ports:
       - "127.0.0.1:8080:3000" # 8080 pour ne pas gêner `npm run dev` (3000)
     depends_on:
       mongo:
         condition: service_healthy
+      collector:
+        condition: service_started
+      sms-passerelle:
+        condition: service_started
 
   web:
     image: movies-web:dev
-    build: ../movies-web
+    build:
+      context: ../movies-web
+      args:
+        GIT_SHA: ${GIT_SHA:-local}
     container_name: movies-web
     ports:
       - "127.0.0.1:8081:80"
     depends_on:
       api:
         condition: service_healthy
+      collector:
+        condition: service_started
+
+  # Collecteur : point d'entrée unique des traces (navigateur via nginx /otlp/, API en direct). Non publié sur la machine.
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.165.0
+    container_name: movies-collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./observabilite/collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    depends_on:
+      - jaeger
+
+  # Jaeger : stockage en mémoire et recherche des traces. Pas d'authentification : publié sur 127.0.0.1 seulement.
+  jaeger:
+    image: jaegertracing/jaeger:2.23.0
+    container_name: movies-jaeger
+    ports:
+      - "127.0.0.1:16686:16686"
+
+  # Prestataire SMS simulé (TP) : répond en ~1,2 s, refuse les numéros finissant par 13.
+  sms-passerelle:
+    image: node:22-alpine
+    container_name: movies-sms
+    command: ["node", "/srv/server.mjs"]
+    volumes:
+      - ./sms-passerelle/server.mjs:/srv/server.mjs:ro
+    environment:
+      SMS_DELAY_MS: "1200"
 
 volumes:
   mongo-data:

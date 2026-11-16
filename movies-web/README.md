@@ -27,6 +27,16 @@ npm run dev        # http://localhost:5173
 En dev, Vite relaie `/api/*` vers l'API : le front appelle `/api/movies` et Vite transmet à `http://localhost:3000/movies`. Pas de CORS à configurer.
 Si l'API tourne ailleurs : `API_URL=http://localhost:4000 npm run dev`.
 
+## Traces et tests
+
+`src/tracing.ts` (appelé par `main.ts`) trace chaque `fetch` : il envoie l'en-tête `traceparent` et exporte les spans vers `/otlp/`, que nginx relaie au collecteur. La saisie d'une recherche est retirée de `url.full`.
+
+```bash
+npm test                                  # Vitest + happy-dom : propagation, garde-fou, messages d'erreur
+npx playwright install chromium           # une fois
+npx playwright test e2e/trace.spec.ts     # pile Docker lancée : trace navigateur → API dans Jaeger
+```
+
 ## Build
 
 ```bash

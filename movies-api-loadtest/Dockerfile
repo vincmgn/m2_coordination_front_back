@@ -21,6 +21,9 @@ ENV ARTIFICIAL_DELAY_MS=${ARTIFICIAL_DELAY_MS}
 
 USER node
 EXPOSE 3000
+# Sonde sur GET / (l'API n'écoute qu'une fois MongoDB connectée) : le collecteur écarte ses traces (http.route "/").
 HEALTHCHECK --interval=5s --timeout=3s --retries=10 \
-  CMD node -e "fetch('http://localhost:3000/movies?limit=1').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["node", "dist/index.js"]
+  CMD node -e "fetch('http://localhost:3000/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+# Traces : l'instrumentation automatique (http, fetch, express, mongodb) est chargée avant l'application,
+# comme l'agent Java avec -javaagent (cf. src/instrumentation.ts). Configuration : variables OTEL_*.
+CMD ["node", "--import", "./dist/instrumentation.js", "dist/index.js"]

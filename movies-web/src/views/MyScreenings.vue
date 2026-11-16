@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { cancelBooking, listMyBookings, type MyBooking } from '@/api'
+import { cancelBooking, getBookingHistory, listMyBookings, type BookingHistoryEvent, type MyBooking } from '@/api'
 import MoviePoster from '@/components/MoviePoster.vue'
 
 const bookings = ref<MyBooking[] | null>(null)
@@ -30,6 +30,26 @@ async function cancel(b: MyBooking) {
   }
 }
 
+// Historique d'une réservation (réservée, SMS, séance passée), chargé au premier clic.
+const histories = reactive<Record<string, { open: boolean; events?: BookingHistoryEvent[]; error?: string }>>({})
+
+async function toggleHistory(b: MyBooking) {
+  // Relire l'entrée depuis histories : c'est le proxy réactif (l'objet littéral ne déclencherait aucun rendu).
+  histories[b.bookingId] ??= { open: false }
+  const h = histories[b.bookingId]!
+  h.open = !h.open
+  if (!h.open || h.events) return
+  try {
+    h.events = (await getBookingHistory(b.bookingId)).events
+    h.error = undefined
+  } catch (e) {
+    h.error = (e as Error).message
+  }
+}
+
+const formatDateTime = (at: string) =>
+  new Date(at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
 const formatDate = (date: string) =>
   new Date(`${date}T12:00:00`).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
 </script>
@@ -54,6 +74,16 @@ const formatDate = (date: string) =>
             <RouterLink :to="`/seances/${b.screeningId}`" class="title">{{ b.movie.title }}</RouterLink>
             <p class="muted when">{{ formatDate(b.date) }} · {{ b.time }}</p>
             <p>Sièges {{ b.seats.join(', ') }} <span class="muted">({{ b.seats.length }} place{{ b.seats.length > 1 ? 's' : '' }})</span></p>
+            <button class="link" :aria-expanded="histories[b.bookingId]?.open ?? false" @click="toggleHistory(b)">Historique</button>
+            <template v-if="histories[b.bookingId]?.open">
+              <p v-if="histories[b.bookingId]?.error" class="error">{{ histories[b.bookingId]?.error }}</p>
+              <ol v-else-if="histories[b.bookingId]?.events" class="history">
+                <li v-for="e in histories[b.bookingId]?.events" :key="e.type">
+                  <span class="muted">{{ formatDateTime(e.at) }}</span> {{ e.label }}
+                </li>
+              </ol>
+              <p v-else class="muted">Chargement…</p>
+            </template>
           </div>
           <button class="btn btn-danger" @click="cancel(b)">Annuler</button>
         </li>
@@ -69,6 +99,16 @@ const formatDate = (date: string) =>
             <span class="title">{{ b.movie.title }}</span>
             <p class="muted when">{{ formatDate(b.date) }} · {{ b.time }}</p>
             <p>Sièges {{ b.seats.join(', ') }}</p>
+            <button class="link" :aria-expanded="histories[b.bookingId]?.open ?? false" @click="toggleHistory(b)">Historique</button>
+            <template v-if="histories[b.bookingId]?.open">
+              <p v-if="histories[b.bookingId]?.error" class="error">{{ histories[b.bookingId]?.error }}</p>
+              <ol v-else-if="histories[b.bookingId]?.events" class="history">
+                <li v-for="e in histories[b.bookingId]?.events" :key="e.type">
+                  <span class="muted">{{ formatDateTime(e.at) }}</span> {{ e.label }}
+                </li>
+              </ol>
+              <p v-else class="muted">Chargement…</p>
+            </template>
           </div>
         </li>
       </ul>
@@ -125,6 +165,23 @@ h2 {
 .title {
   font-weight: 600;
   text-decoration: none;
+}
+
+.link {
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.history {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.85rem;
 }
 
 .when {

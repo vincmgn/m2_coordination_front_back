@@ -1,0 +1,38 @@
+# Collecteur OpenTelemetry : reçoit les spans du navigateur (via nginx /otlp/) et de l'API, les nettoie, les envoie à Jaeger.
+# Image otel/opentelemetry-collector-contrib:0.165.0 (cf. docker-compose.yml).
+receivers:
+  otlp:
+    protocols:
+      http: { endpoint: 0.0.0.0:4318 } # écoute toutes les interfaces du conteneur (localhost par défaut)
+      grpc: { endpoint: 0.0.0.0:4317 }
+
+processors:
+  memory_limiter: { check_interval: 1s, limit_mib: 200 }
+  # Garde-fou n° 3 : supprimer ce qui aurait échappé au code et au navigateur.
+  attributes/sante:
+    actions:
+      - { key: url.query, action: delete } # saisie dans l'URL (?q=…)
+      - { key: enduser.id, action: delete } # identité de l'utilisateur
+  # Bruit écarté avant Jaeger : la sonde de santé Docker (GET / toutes les 5 s) et les spans de middleware
+  # Express (analyse JSON, en-tête X-Trace-Id), quelques microsecondes chacun et sans enfant.
+  filter/bruit:
+    error_mode: ignore
+    traces:
+      span:
+        - 'resource.attributes["service.name"] == "movies-api" and attributes["url.path"] == "/"'
+        - 'resource.attributes["service.name"] == "movies-api" and attributes["http.route"] == "/"'
+        - 'attributes["express.type"] == "middleware"'
+  batch: {}
+
+exporters:
+  otlp_grpc/jaeger:
+    endpoint: jaeger:4317
+    tls: { insecure: true } # réseau Docker interne
+  debug: { verbosity: basic }
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/bruit, attributes/sante, batch]
+      exporters: [otlp_grpc/jaeger, debug]

@@ -244,6 +244,17 @@ Tous les tests tournent sur une base MongoDB jetable (`npm run seed`, 21 349 fil
 - **Appel GitHub refusé** : 2 nouvelles tentatives pour 429/5xx, sinon erreur explicite et run en échec.
 - **Droits** : jeton automatique `GITHUB_TOKEN` (aucune clé dans le dépôt) ; `issues: write` uniquement dans le job `publish`, qui ne lance ni l'API ni k6 ni les dépendances npm.
 
+## Traces (OpenTelemetry)
+
+Le navigateur et l'API envoient leurs spans à un collecteur (`observabilite/collector.yaml`), qui les relaie à **Jaeger** sur http://localhost:16686. Une même trace va du clic (`movies-web`) jusqu'aux requêtes MongoDB (`movies-api`). L'API est instrumentée automatiquement : `src/instrumentation.ts` est chargé par `node --import` et configuré par les variables `OTEL_*` de `docker-compose.yml`. Elle renvoie l'identifiant de trace dans `X-Trace-Id`, et le front l'affiche dans ses messages d'erreur (« réf. … »).
+
+```bash
+GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build   # service.version = commit
+bash tests/verifier_traces.sh                                        # 3 vérifications : /otlp/, service, propagation
+```
+
+`TP_TICKETS=1` (valeur par défaut) active les trois défauts du TP : SMS synchrone, N+1 dans « Mes séances », libellé d'historique manquant. Pour avoir le comportement corrigé : `TP_TICKETS=0 docker compose up -d api`. Le diagnostic est dans [`TRACES.md`](TRACES.md).
+
 ## Déploiement et rollback (Docker Compose)
 
 `docker-compose.yml` lance 3 conteneurs : **`movies-db`** (MongoDB), **`movies-api`** (l'API) et **`movies-web`** (le front Vue servi par nginx sur http://localhost:8081, qui relaie `/api` vers l'API). `docker compose up -d --build` démarre le tout. Il simule un serveur de production : l'API tourne dans une **image versionnée** (`movies-api:v1`, `v2`…) sur http://localhost:8080, MongoDB garde ses données dans le **volume persistant** `mongo-data` (port 27018). Changer de version ne recrée que le conteneur `api` : les données ne sont jamais touchées.

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { connectDB, closeDB } from "./db.js";
 import { HttpError } from "./http-error.js";
@@ -6,6 +7,7 @@ import abRouter, { ensureAbIndexes } from "./routes/ab.js";
 import authRouter, { ensureAuthIndexes } from "./routes/auth.js";
 import moviesRouter from "./routes/movies.js";
 import screeningsRouter, { ensureScreeningIndexes } from "./routes/screenings.js";
+import { seedTpDemo } from "./tp-demo.js";
 
 type AppError = Error & { status?: number; type?: string };
 
@@ -17,6 +19,14 @@ const ARTIFICIAL_DELAY_MS = Number(process.env.ARTIFICIAL_DELAY_MS) || 0;
 const app = express();
 app.disable("x-powered-by");
 app.use(express.json());
+
+// Identifiant de la trace en cours, renvoyé dans X-Trace-Id : le front l'affiche dans ses messages d'erreur,
+// le support le recopie dans le ticket. Sans instrumentation, le contexte est invalide et rien n'est ajouté.
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  const ctx = trace.getActiveSpan()?.spanContext();
+  if (ctx && trace.isSpanContextValid(ctx)) res.set("X-Trace-Id", ctx.traceId);
+  next();
+});
 
 if (ARTIFICIAL_DELAY_MS > 0) {
   console.warn(`Ralentissement artificiel de ${ARTIFICIAL_DELAY_MS} ms par requête (simulation de régression)`);
@@ -73,7 +83,13 @@ app.use((err: AppError, _req: Request, res: Response, next: NextFunction) => {
   // Une HttpError est une réponse voulue (ex. 503 simulé) : son message est montré tel quel.
   // Toute autre erreur 5xx est un bug : on la journalise et on masque ses détails.
   const unexpected = status >= 500 && !(err instanceof HttpError);
-  if (unexpected) console.error(err);
+  if (unexpected) {
+    console.error(err);
+    // Événement « exception » (type, message, pile) sur le span en cours : Jaeger l'affiche sous error=true.
+    const span = trace.getActiveSpan();
+    span?.recordException(err);
+    span?.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
+  }
   res.status(status).json({ error: unexpected ? "Erreur interne du serveur" : err.message });
 });
 
@@ -84,6 +100,7 @@ try {
   await ensureScreeningIndexes();
   await ensureAbIndexes();
   await ensureAuthIndexes();
+  await seedTpDemo();
 } catch (err) {
   console.error("Connexion à MongoDB impossible :", (err as Error).message);
   process.exit(1);

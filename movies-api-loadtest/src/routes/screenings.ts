@@ -1,10 +1,13 @@
 import { EventEmitter } from "node:events";
+import { SpanStatusCode, trace } from "@opentelemetry/api";
 import { Router, type Response } from "express";
 import { MongoBulkWriteError, ObjectId } from "mongodb";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
 import { recordConversion } from "./ab.js";
 import { currentUser, requireUser } from "./auth.js";
+import { sendSms, type SmsStatus } from "../sms.js";
+import { TP_TICKETS } from "../tp.js";
 
 // Réservation de places de cinéma (équivalent des créneaux : un siège d'une séance = une place réservable une seule fois).
 //
@@ -39,11 +42,15 @@ interface Reservation {
   requestId?: string;
   userId?: ObjectId; // compte connecté au moment de la réservation (facultatif)
   createdAt: Date;
+  smsStatus?: SmsStatus; // résultat du SMS de confirmation
+  smsAt?: Date;
 }
 
 const router = Router();
 const reservations = () => getDB().collection<Reservation>("reservations");
 const movies = () => getDB().collection("movies");
+// Traceur des spans métier. Sans instrumentation chargée, l'API OpenTelemetry ne fait rien (aucun coût).
+const tracer = trace.getTracer("movies-api");
 
 export async function ensureScreeningIndexes() {
   await reservations().createIndex({ screeningId: 1, seat: 1 }, { unique: true });
@@ -166,6 +173,26 @@ router.get("/", async (req, res) => {
   res.json(list.map((s) => ({ ...s, capacity: CAPACITY, available: CAPACITY - (taken.get(s.id) ?? 0) })));
 });
 
+type MovieCard = { _id: ObjectId; title?: string; poster?: string };
+
+// Titres et affiches des films réservés, en une seule requête ($in).
+async function titlesAtOnce(bookings: { screeningId: string }[]) {
+  const movieIds = [...new Set(bookings.map((b) => b.screeningId.slice(0, 24)))].map((id) => new ObjectId(id));
+  const found = await movies().find<MovieCard>({ _id: { $in: movieIds } }, { projection: { title: 1, poster: 1 } }).toArray();
+  return new Map(found.map((m) => [String(m._id), m]));
+}
+
+// TP OpenTelemetry, ticket T2 : une requête par réservation (N+1). Actif avec TP_TICKETS=1.
+async function titlesOneByOne(bookings: { screeningId: string }[]) {
+  const titles = new Map<string, MovieCard>();
+  for (const b of bookings) {
+    const id = b.screeningId.slice(0, 24);
+    const movie = await movies().findOne<MovieCard>({ _id: new ObjectId(id) }, { projection: { title: 1, poster: 1 } });
+    if (movie) titles.set(id, movie);
+  }
+  return titles;
+}
+
 // GET /screenings/mine : réservations du compte connecté (« Mes séances »), passées comprises, de la plus proche à la plus ancienne.
 // Déclarée avant /:id, sinon « mine » serait pris pour un identifiant de séance.
 router.get("/mine", async (req, res) => {
@@ -178,10 +205,7 @@ router.get("/mine", async (req, res) => {
     ])
     .toArray();
 
-  const movieIds = [...new Set(bookings.map((b) => b.screeningId.slice(0, 24)))].map((id) => new ObjectId(id));
-  const titles = new Map(
-    (await movies().find({ _id: { $in: movieIds } }, { projection: { title: 1, poster: 1 } }).toArray()).map((m) => [String(m._id), m]),
-  );
+  const titles = TP_TICKETS ? await titlesOneByOne(bookings) : await titlesAtOnce(bookings);
   const now = parisNow().dateTime;
   const list = bookings.map((b) => {
     const [, movieId, y, m, d, hh, mm] = b.screeningId.match(/^([0-9a-f]{24})-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/)!;
@@ -202,6 +226,42 @@ router.get("/mine", async (req, res) => {
   // À venir d'abord (la plus proche en premier), puis passées (la plus récente en premier).
   list.sort((a, b) => Number(b.upcoming) - Number(a.upcoming) || (a.upcoming ? 1 : -1) * `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   res.json(list);
+});
+
+// --- Historique d'une réservation ------------------------------------------------------------
+
+type HistoryType = "RESERVEE" | "SMS_ENVOYE" | "SMS_ECHEC" | "SEANCE_PASSEE";
+
+const LABELS: Partial<Record<HistoryType, string>> = {
+  RESERVEE: "Réservation enregistrée : {places}",
+  SMS_ENVOYE: "SMS de confirmation envoyé",
+  // TP OpenTelemetry, ticket T3 : avec TP_TICKETS=1, le libellé de l'échec SMS manque.
+  ...(TP_TICKETS ? {} : { SMS_ECHEC: "SMS de confirmation non remis (opérateur indisponible)" }),
+  SEANCE_PASSEE: "Séance passée",
+};
+
+function historyLabel(type: HistoryType, seats: string[]) {
+  return LABELS[type]!.replace("{places}", seats.join(", "));
+}
+
+// GET /screenings/mine/:bookingId/history : étapes d'une réservation du compte connecté, de la plus ancienne à la plus récente.
+router.get("/mine/:bookingId/history", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const user = await requireUser(req);
+  if (!/^[0-9a-f]{24}$/i.test(req.params.bookingId)) throw new HttpError(400, "Identifiant de réservation invalide");
+  const rows = await reservations()
+    .find({ userId: user._id, bookingId: new ObjectId(req.params.bookingId) })
+    .toArray();
+  if (!rows.length) throw new HttpError(404, "Réservation introuvable");
+
+  const first = rows[0]!;
+  const seats = rows.map((r) => r.seat).sort();
+  const events: { type: HistoryType; at: string }[] = [{ type: "RESERVEE", at: first.createdAt.toISOString() }];
+  if (first.smsStatus) events.push({ type: first.smsStatus === "SENT" ? "SMS_ENVOYE" : "SMS_ECHEC", at: (first.smsAt ?? first.createdAt).toISOString() });
+  const [, , y, m, d, hh, mm] = first.screeningId.match(/^([0-9a-f]{24})-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/)!;
+  if (`${y}-${m}-${d}T${hh}:${mm}` <= parisNow().dateTime) events.push({ type: "SEANCE_PASSEE", at: `${y}-${m}-${d}T${hh}:${mm}` });
+
+  res.json({ bookingId: first.bookingId, events: events.map((e) => ({ ...e, label: historyLabel(e.type, seats) })) });
 });
 
 // GET /screenings/:id : la séance, le plan de salle et les sièges déjà réservés.
@@ -275,38 +335,61 @@ router.post("/:id/reservations", async (req, res) => {
   // Connecté : la réservation est rattachée au compte et apparaît dans « Mes séances ».
   const userId = (await currentUser(req))?._id;
 
-  // Tous les sièges d'une réservation ou aucun : en cas de conflit, on supprime ceux déjà insérés.
-  const bookingId = new ObjectId();
-  const createdAt = new Date();
-  try {
-    await reservations().insertMany(
-      seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt, ...(requestId && { requestId }), ...(userId && { userId }) })),
-      { ordered: false },
-    );
-  } catch (e) {
-    if (!(e instanceof MongoBulkWriteError) || e.code !== 11000) throw e;
-    await reservations().deleteMany({ screeningId: screening.id, bookingId });
-    // Deux envois simultanés de la même demande : le second tombe sur les sièges du premier, ce n'est pas un conflit.
-    const existing = requestId ? await findByRequest(screening.id, requestId) : null;
-    if (existing) {
-      res.status(200).json(existing);
-      return;
-    }
-    const conflicts = (
-      await reservations()
-        .find({ screeningId: screening.id, seat: { $in: seats } }, { projection: { seat: 1 } })
-        .toArray()
-    ).map((r) => r.seat);
-    res.status(409).json({ error: `Sièges déjà réservés : ${conflicts.join(", ")}`, seats: conflicts });
-    return;
-  }
+  // Span métier : deux identifiants techniques, jamais le nom, l'e-mail ni le téléphone (données personnelles).
+  await tracer.startActiveSpan("movies.reservation", { attributes: { "movies.screening.id": screening.id } }, async (span) => {
+    try {
+      // Tous les sièges d'une réservation ou aucun : en cas de conflit, on supprime ceux déjà insérés.
+      const bookingId = new ObjectId();
+      const createdAt = new Date();
+      try {
+        await reservations().insertMany(
+          seats.map((seat) => ({ screeningId: screening.id, seat, name, email, phone, bookingId, createdAt, ...(requestId && { requestId }), ...(userId && { userId }) })),
+          { ordered: false },
+        );
+      } catch (e) {
+        if (!(e instanceof MongoBulkWriteError) || e.code !== 11000) throw e;
+        await reservations().deleteMany({ screeningId: screening.id, bookingId });
+        // Deux envois simultanés de la même demande : le second tombe sur les sièges du premier, ce n'est pas un conflit.
+        const existing = requestId ? await findByRequest(screening.id, requestId) : null;
+        if (existing) {
+          res.status(200).json(existing);
+          return;
+        }
+        const conflicts = (
+          await reservations()
+            .find({ screeningId: screening.id, seat: { $in: seats } }, { projection: { seat: 1 } })
+            .toArray()
+        ).map((r) => r.seat);
+        res.status(409).json({ error: `Sièges déjà réservés : ${conflicts.join(", ")}`, seats: conflicts });
+        return;
+      }
+      span.setAttribute("movies.booking.id", bookingId.toHexString());
 
-  // Enregistrer, puis notifier : l'événement ne part qu'après l'écriture réussie.
-  publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "BOOKED" });
-  // Conversion A/B : après l'écriture réussie, jamais au clic. Une panne de la mesure ne fait pas échouer la réservation.
-  await recordConversion(req).catch((e) => console.error("Attribution A/B impossible :", e));
-  res.status(201).json({ bookingId, screeningId: screening.id, seats, name });
+      // Enregistrer, puis notifier : l'événement ne part qu'après l'écriture réussie.
+      publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "BOOKED" });
+
+      // SMS de confirmation : le statut est gardé pour l'historique. Le prestataire est lent (≈ 1 s).
+      const sms = confirmBySms(screening, bookingId, seats, phone);
+      if (TP_TICKETS) await sms; // TP OpenTelemetry, ticket T1 : la réponse attend le prestataire SMS.
+      else sms.catch((e) => console.error("SMS de confirmation impossible :", e));
+
+      // Conversion A/B : après l'écriture réussie, jamais au clic. Une panne de la mesure ne fait pas échouer la réservation.
+      await recordConversion(req).catch((e) => console.error("Attribution A/B impossible :", e));
+      res.status(201).json({ bookingId, screeningId: screening.id, seats, name });
+    } catch (e) {
+      span.recordException(e as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      throw e;
+    } finally {
+      span.end();
+    }
+  });
 });
+
+async function confirmBySms(screening: Awaited<ReturnType<typeof findScreening>>, bookingId: ObjectId, seats: string[], phone: string) {
+  const status = await sendSms(phone, `Movies : ${seats.join(", ")} le ${screening.date} à ${screening.time} (${String(screening.movie.title)}).`);
+  if (status) await reservations().updateMany({ screeningId: screening.id, bookingId }, { $set: { smsStatus: status, smsAt: new Date() } });
+}
 
 // DELETE /screenings/:id/reservations/:bookingId : annule une réservation (libère tous ses sièges).
 router.delete("/:id/reservations/:bookingId", async (req, res) => {
