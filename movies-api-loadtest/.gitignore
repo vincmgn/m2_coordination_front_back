@@ -7,3 +7,6 @@ load-tests/reports/
 # Déploiement local (docker compose) : état des versions et sauvegardes MongoDB
 .deploy/
 backups/
+
+# Tests : PDF d’exemple produit par tests/ticket-pdf.test.ts
+tests/out/

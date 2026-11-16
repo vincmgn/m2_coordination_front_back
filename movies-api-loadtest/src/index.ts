@@ -7,6 +7,7 @@ import abRouter, { ensureAbIndexes } from "./routes/ab.js";
 import authRouter, { ensureAuthIndexes } from "./routes/auth.js";
 import moviesRouter from "./routes/movies.js";
 import screeningsRouter, { ensureScreeningIndexes } from "./routes/screenings.js";
+import ticketsRouter from "./routes/tickets.js";
 import { seedTpDemo } from "./tp-demo.js";
 
 type AppError = Error & { status?: number; type?: string };
@@ -52,6 +53,7 @@ app.get("/", (_req: Request, res: Response) => {
       { method: "POST", path: "/auth/logout", description: "Se déconnecter" },
       { method: "GET", path: "/auth/me", description: "Utilisateur connecté (401 sinon)" },
       { method: "GET", path: "/screenings/mine", description: "Mes séances : réservations du compte connecté" },
+      { method: "GET", path: "/screenings/mine/:bookingId/ticket.pdf", description: "Billet PDF d'une réservation (inline ; ?download=true : attachment)" },
       { method: "GET", path: "/screenings?movieId=", description: "Séances à venir d'un film et places libres" },
       { method: "GET", path: "/screenings/:id", description: "Plan de salle et sièges réservés" },
       { method: "GET", path: "/screenings/:id/events", description: "Flux SSE : sièges réservés / libérés en direct" },
@@ -65,6 +67,7 @@ app.get("/", (_req: Request, res: Response) => {
 });
 
 app.use("/movies", moviesRouter);
+app.use("/screenings", ticketsRouter);
 app.use("/screenings", screeningsRouter);
 app.use("/ab", abRouter);
 app.use("/auth", authRouter);

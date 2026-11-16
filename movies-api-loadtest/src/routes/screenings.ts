@@ -49,6 +49,9 @@ interface Reservation {
 const router = Router();
 const reservations = () => getDB().collection<Reservation>("reservations");
 const movies = () => getDB().collection("movies");
+// Trace des annulations d'un compte : le billet d'une réservation annulée répond 409 au lieu de 404.
+const cancellations = () =>
+  getDB().collection<{ bookingId: ObjectId; userId: ObjectId; screeningId: string; seats: string[]; cancelledAt: Date }>("cancellations");
 // Traceur des spans métier. Sans instrumentation chargée, l'API OpenTelemetry ne fait rien (aucun coût).
 const tracer = trace.getTracer("movies-api");
 
@@ -57,6 +60,7 @@ export async function ensureScreeningIndexes() {
   await reservations().createIndex({ screeningId: 1, bookingId: 1 });
   await reservations().createIndex({ requestId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } });
   await reservations().createIndex({ userId: 1 }, { partialFilterExpression: { userId: { $exists: true } } });
+  await cancellations().createIndex({ userId: 1, bookingId: 1 });
 }
 
 async function findByRequest(screeningId: string, requestId: string) {
@@ -392,12 +396,21 @@ async function confirmBySms(screening: Awaited<ReturnType<typeof findScreening>>
 }
 
 // DELETE /screenings/:id/reservations/:bookingId : annule une réservation (libère tous ses sièges).
+// Réservation d'un compte : uniquement par ce compte connecté (404 sinon).
 router.delete("/:id/reservations/:bookingId", async (req, res) => {
   const screening = await findScreening(req.params.id);
   if (!/^[0-9a-f]{24}$/i.test(req.params.bookingId)) throw new HttpError(400, "Identifiant de réservation invalide");
   const bookingId = new ObjectId(req.params.bookingId);
-  const seats = (await reservations().find({ screeningId: screening.id, bookingId }).toArray()).map((r) => r.seat);
+  const rows = await reservations().find({ screeningId: screening.id, bookingId }).toArray();
+  const seats = rows.map((r) => r.seat);
   if (!seats.length) throw new HttpError(404, "Réservation introuvable");
+  // Réservation rattachée à un compte : seul ce compte peut l'annuler. Pour un autre (ou sans session),
+  // même réponse qu'une réservation inconnue : un 403 avouerait qu'elle existe.
+  // Réservation faite sans compte : le bookingId, reçu seulement par celui qui a réservé, reste la preuve.
+  const userId = rows[0]!.userId;
+  if (userId && !(await currentUser(req))?._id.equals(userId)) throw new HttpError(404, "Réservation introuvable");
+  // Garder la trace de l'annulation (billet → 409), puis libérer les sièges.
+  if (userId) await cancellations().insertOne({ bookingId, userId, screeningId: screening.id, seats, cancelledAt: new Date() });
   await reservations().deleteMany({ screeningId: screening.id, bookingId });
   publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "AVAILABLE" });
   res.status(204).end();

@@ -255,6 +255,16 @@ bash tests/verifier_traces.sh                                        # 3 vérifi
 
 `TP_TICKETS=1` (valeur par défaut) active les trois défauts du TP : SMS synchrone, N+1 dans « Mes séances », libellé d'historique manquant. Pour avoir le comportement corrigé : `TP_TICKETS=0 docker compose up -d api`. Le diagnostic est dans [`TRACES.md`](TRACES.md).
 
+## Billet PDF
+
+`GET /screenings/mine/:bookingId/ticket.pdf` renvoie le billet d'une réservation du compte connecté. Par défaut le navigateur l'affiche (`inline`) ; avec `?download=true`, il l'enregistre (`attachment`). Le nom du fichier est `billet-<bookingId>.pdf`.
+
+- **Codes :** 401 sans session ; 404 si la réservation est inconnue ou appartient à un autre compte ; 409 si elle a été annulée.
+- **Fabrication :** côté serveur avec pdfkit, en PDF/UA balisé, avec les polices DejaVu Sans embarquées et l'heure de Paris.
+- **Tests :** `npm test` (node:test, sans base). Le PDF d'exemple est écrit dans `tests/out/billet-exemple.pdf`.
+
+Le contrat, les choix et les preuves sont dans [`CONVOCATION.md`](CONVOCATION.md).
+
 ## Déploiement et rollback (Docker Compose)
 
 `docker-compose.yml` lance 3 conteneurs : **`movies-db`** (MongoDB), **`movies-api`** (l'API) et **`movies-web`** (le front Vue servi par nginx sur http://localhost:8081, qui relaie `/api` vers l'API). `docker compose up -d --build` démarre le tout. Il simule un serveur de production : l'API tourne dans une **image versionnée** (`movies-api:v1`, `v2`…) sur http://localhost:8080, MongoDB garde ses données dans le **volume persistant** `mongo-data` (port 27018). Changer de version ne recrée que le conteneur `api` : les données ne sont jamais touchées.

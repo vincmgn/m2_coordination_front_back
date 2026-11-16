@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { cancelBooking, getBookingHistory, listMyBookings, type BookingHistoryEvent, type MyBooking } from '@/api'
 import MoviePoster from '@/components/MoviePoster.vue'
+import TicketButton from '@/components/TicketButton.vue'
 
 const bookings = ref<MyBooking[] | null>(null)
 const error = ref<string | null>(null)
@@ -74,7 +75,10 @@ const formatDate = (date: string) =>
             <RouterLink :to="`/seances/${b.screeningId}`" class="title">{{ b.movie.title }}</RouterLink>
             <p class="muted when">{{ formatDate(b.date) }} · {{ b.time }}</p>
             <p>Sièges {{ b.seats.join(', ') }} <span class="muted">({{ b.seats.length }} place{{ b.seats.length > 1 ? 's' : '' }})</span></p>
-            <button class="link" :aria-expanded="histories[b.bookingId]?.open ?? false" @click="toggleHistory(b)">Historique</button>
+            <p class="actions">
+              <TicketButton :booking-id="b.bookingId" />
+              <button class="link" :aria-expanded="histories[b.bookingId]?.open ?? false" @click="toggleHistory(b)">Historique</button>
+            </p>
             <template v-if="histories[b.bookingId]?.open">
               <p v-if="histories[b.bookingId]?.error" class="error">{{ histories[b.bookingId]?.error }}</p>
               <ol v-else-if="histories[b.bookingId]?.events" class="history">
@@ -99,7 +103,10 @@ const formatDate = (date: string) =>
             <span class="title">{{ b.movie.title }}</span>
             <p class="muted when">{{ formatDate(b.date) }} · {{ b.time }}</p>
             <p>Sièges {{ b.seats.join(', ') }}</p>
-            <button class="link" :aria-expanded="histories[b.bookingId]?.open ?? false" @click="toggleHistory(b)">Historique</button>
+            <p class="actions">
+              <TicketButton :booking-id="b.bookingId" />
+              <button class="link" :aria-expanded="histories[b.bookingId]?.open ?? false" @click="toggleHistory(b)">Historique</button>
+            </p>
             <template v-if="histories[b.bookingId]?.open">
               <p v-if="histories[b.bookingId]?.error" class="error">{{ histories[b.bookingId]?.error }}</p>
               <ol v-else-if="histories[b.bookingId]?.events" class="history">
@@ -148,9 +155,12 @@ h2 {
   opacity: 0.65;
 }
 
-.poster {
+/* Affiche absente : le « padding: 12% » de MoviePoster se calcule sur la largeur de la carte (137 px de chaque côté),
+   ce qui élargissait la vignette bien au-delà de 56 px. Marge fixe ici ; .card devant pour l'emporter quel que soit l'ordre des CSS. */
+.card .poster {
   flex: none;
   width: 56px;
+  padding: 4px;
 }
 
 .info {
@@ -176,6 +186,13 @@ h2 {
   background: none;
   border: 0;
   cursor: pointer;
+}
+
+.info .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-top: 0.25rem;
 }
 
 .history {
