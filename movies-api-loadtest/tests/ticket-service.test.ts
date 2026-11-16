@@ -7,7 +7,7 @@ import { describe, it, mock } from "node:test";
 import { HttpError } from "../src/http-error.js";
 import { formatInstant } from "../src/ticket/formats.js";
 import { buildTicket, CANCELLED, NOT_FOUND, type TicketStore } from "../src/ticket/service.js";
-import type { TicketBooking, TicketView } from "../src/ticket/view.js";
+import { posterColor, type TicketBooking, type TicketView } from "../src/ticket/view.js";
 
 const OWNER = "65000000000000000000000a";
 const OTHER = "65000000000000000000000b";
@@ -74,5 +74,13 @@ describe("heure de Paris", () => {
   it("le jour du changement d'heure : 29 mars 2026, 00:30Z → 1 h 30, 01:30Z → 3 h 30", () => {
     assert.equal(formatInstant(new Date("2026-03-29T00:30:00Z")), "29 mars 2026 à 1 h 30");
     assert.equal(formatInstant(new Date("2026-03-29T01:30:00Z")), "29 mars 2026 à 3 h 30");
+  });
+});
+
+describe("couleur de l'affiche", () => {
+  // Même table que movies-web/src/posterColor.test.ts : le billet et « Mes séances » gardent la même couleur.
+  const REFERENCE = { Psycho: "#ffb547", Amélie: "#7ce0c3", Heat: "#ff7a9a", Alien: "#b7a6ff", Vertigo: "#f3f1ec", Matrix: "#8fc9ff" };
+  it("même couleur que le front pour chaque titre de référence", () => {
+    for (const [title, color] of Object.entries(REFERENCE)) assert.equal(posterColor(title), color, title);
   });
 });

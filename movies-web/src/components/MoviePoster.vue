@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { posterColor } from '@/posterColor'
 
 // decorative : le titre est déjà écrit à côté (carte, liste) ; l'affiche est alors ignorée par les lecteurs d'écran
 // pour ne pas annoncer le titre deux fois.
@@ -12,9 +13,8 @@ watch(
   () => (broken.value = false),
 )
 
-// Couleur stable par titre : la même affiche de remplacement d'une page à l'autre.
-const COLORS = ['#ffb547', '#7ce0c3', '#ff7a9a', '#b7a6ff', '#f3f1ec', '#8fc9ff']
-const color = computed(() => COLORS[[...props.title].reduce((sum, c) => sum + c.charCodeAt(0), 0) % COLORS.length])
+// Couleur stable par titre (même calcul que le billet PDF de l'API).
+const color = computed(() => posterColor(props.title))
 </script>
 
 <template>

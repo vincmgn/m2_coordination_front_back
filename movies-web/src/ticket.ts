@@ -8,6 +8,7 @@ export const MESSAGES: Record<number, string> = {
   401: 'Votre session a expiré. Reconnectez-vous.',
   404: 'Cette réservation est introuvable.',
   409: "Cette réservation a été annulée : elle n'a plus de billet.",
+  429: 'Trop de billets demandés en peu de temps. Réessayez dans une minute.',
 }
 export const FALLBACK = "Le billet n'a pas pu être préparé. Réessayez dans un instant."
 export const OFFLINE = 'Connexion impossible : vérifiez votre réseau, puis réessayez.'
@@ -35,7 +36,8 @@ export function filenameFrom(header: string | null, bookingId: string) {
   return name && !/[\\/]/.test(name) ? name : `billet-${bookingId}.pdf`
 }
 
-export async function fetchTicket(bookingId: string, download = false): Promise<{ blob: Blob; filename: string }> {
+// Réponse vérifiée : statut 2xx et type PDF, sinon TicketError avec une phrase. Le corps n'est pas encore lu.
+async function requestTicket(bookingId: string, download: boolean): Promise<Response> {
   let r: Response
   try {
     r = await fetch(ticketUrl(bookingId, download), {
@@ -54,6 +56,11 @@ export async function fetchTicket(bookingId: string, download = false): Promise<
   }
   // Un 200 qui n'est pas un PDF : page HTML d'un proxy, d'un portail Wi-Fi ou de l'index du front (route inconnue).
   if (!(r.headers.get('Content-Type') ?? '').startsWith('application/pdf')) throw new TicketError(FALLBACK, r.status)
+  return r
+}
+
+export async function fetchTicket(bookingId: string, download = false): Promise<{ blob: Blob; filename: string }> {
+  const r = await requestTicket(bookingId, download)
   return { blob: await r.blob(), filename: filenameFrom(r.headers.get('Content-Disposition'), bookingId) }
 }
 
@@ -78,11 +85,13 @@ export interface Browser {
 // l'URL du serveur et non un blob: : le bouton « Télécharger » du lecteur PDF du navigateur relit l'URL affichée.
 // Avec un blob révoqué il échouait (« Vérifiez votre connexion »), et sinon nommait le fichier d'après l'UUID du blob.
 // Ici il relit le serveur (cookie de session, même origine) et prend le nom de Content-Disposition.
-// Prix : le PDF est fabriqué deux fois (≈ 23 Ko, quelques dizaines de ms).
+// Prix : le PDF est fabriqué deux fois (≈ 35 Ko, quelques dizaines de ms). La vérification ne lit pas le corps :
+// il est abandonné dès que le statut et le type sont confirmés.
 export async function openTicket(bookingId: string, browser: Browser): Promise<void> {
   const tab = browser.openTab()
   try {
-    await fetchTicket(bookingId)
+    const r = await requestTicket(bookingId, false)
+    await r.body?.cancel().catch(() => {})
     tab.show(ticketUrl(bookingId))
   } catch (e) {
     tab.close() // pas d'onglet vide

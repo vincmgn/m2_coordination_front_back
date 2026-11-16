@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { HttpError } from "../src/http-error.js";
-import { ticketsRouter } from "../src/routes/tickets.js";
+import { TOO_MANY, ticketsRouter } from "../src/routes/tickets.js";
 import type { TicketStore } from "../src/ticket/service.js";
 
 const OWNER = "65000000000000000000000a";
@@ -30,6 +30,7 @@ before(async () => {
     "/screenings",
     ticketsRouter({
       store,
+      limit: { max: 6, windowMs: 60_000 },
       userId: async (req) => {
         const id = req.get("X-Test-User");
         if (!id) throw new HttpError(401, "Connexion requise");
@@ -83,5 +84,17 @@ describe("GET /screenings/mine/:bookingId/ticket.pdf", () => {
     const cancelled = await get(`/${CANCELLED_BOOKING}/ticket.pdf`);
     assert.equal(cancelled.status, 409);
     assert.deepEqual(await cancelled.json(), { error: "Cette réservation a été annulée : elle n'a plus de billet." });
+  });
+
+  // Limite du test : 6 par minute et par compte. Un compte neuf, pour ne pas dépendre des tests précédents.
+  it("429 au-delà de la limite par compte, avec Retry-After ; les autres comptes ne sont pas gênés", async () => {
+    const busy = "65000000000000000000000c";
+    for (let i = 0; i < 6; i++) assert.equal((await get(`/${BOOKING}/ticket.pdf`, busy)).status, 404);
+    const r = await get(`/${BOOKING}/ticket.pdf`, busy);
+    assert.equal(r.status, 429);
+    const retry = Number(r.headers.get("retry-after"));
+    assert.ok(retry > 0 && retry <= 60, `Retry-After : ${retry}`);
+    assert.deepEqual(await r.json(), { error: TOO_MANY });
+    assert.equal((await get(`/${BOOKING}/ticket.pdf`)).status, 200);
   });
 });

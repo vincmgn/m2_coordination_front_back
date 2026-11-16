@@ -81,7 +81,7 @@ describe('Récupération du PDF', () => {
     expect(filename).toBe(`billet-${ID}.pdf`)
   })
 
-  it.each([401, 404, 409])('traduit %i en phrase, jamais le détail technique', async (status) => {
+  it.each([401, 404, 409, 429])('traduit %i en phrase, jamais le détail technique', async (status) => {
     answer(problem(status))
     await expect(fetchTicket(ID)).rejects.toEqual(new TicketError(MESSAGES[status]!, status))
   })
@@ -105,7 +105,9 @@ describe('Récupération du PDF', () => {
 describe('Affichage et mémoire', () => {
   it("ouvre l'onglet avant l'attente, puis y affiche l'URL du serveur une fois le PDF vérifié", async () => {
     const { b, tab } = fakeBrowser()
-    const fetchMock = answer(pdf())
+    const response = pdf()
+    const blob = vi.spyOn(response, 'blob')
+    const fetchMock = answer(response)
     const pending = openTicket(ID, b)
     // Ouvert pendant le clic, avant toute réponse : sinon le navigateur le bloque.
     expect(b.openTab).toHaveBeenCalledTimes(1)
@@ -115,6 +117,8 @@ describe('Affichage et mémoire', () => {
     // Pas de blob: : le bouton « Télécharger » du lecteur PDF relit cette URL, avec le nom donné par le serveur.
     expect(tab.show).toHaveBeenCalledWith(`/api/screenings/mine/${ID}/ticket.pdf`)
     expect(b.createObjectURL).not.toHaveBeenCalled()
+    // Vérification seulement : le PDF n'est pas lu (l'onglet le recharge depuis le serveur).
+    expect(blob).not.toHaveBeenCalled()
   })
 
   it("referme l'onglet vide en cas d'erreur", async () => {

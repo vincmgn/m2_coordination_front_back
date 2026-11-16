@@ -61,6 +61,8 @@ export async function ensureScreeningIndexes() {
   await reservations().createIndex({ requestId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } });
   await reservations().createIndex({ userId: 1 }, { partialFilterExpression: { userId: { $exists: true } } });
   await cancellations().createIndex({ userId: 1, bookingId: 1 });
+  // Purge : MongoDB supprime seul les annulations de plus de 90 jours (le billet répond alors 404 au lieu de 409).
+  await cancellations().createIndex({ cancelledAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 }
 
 async function findByRequest(screeningId: string, requestId: string) {

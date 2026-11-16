@@ -8,7 +8,7 @@ Ce TP est adapté de MediSlot à Movies (`movies-api-loadtest` + `movies-web`). 
 | Front | http://localhost:8081, puis « Mes séances » |
 | Compte de démonstration | `spectateur@movies.test` / `Movies-demo-2026!` (Camille Dupont, données fictives) |
 | Second compte (preuve 404) | `second@movies.test` / `Second-demo-2026!` (Hélène Durand, fictif), créé par `POST /auth/register` |
-| Tests | API : `cd movies-api-loadtest && npm test` (15). Front : `cd movies-web && npm test` (19, dont 13 pour le billet) |
+| Tests | API : `cd movies-api-loadtest && npm test` (17). Front : `cd movies-web && npm test` (26, dont 14 pour le billet et 6 pour la couleur d'affiche) |
 
 | Côté | Fichier | Rôle (équivalent MediSlot) |
 | --- | --- | --- |
@@ -57,12 +57,14 @@ X-Content-Type-Options: nosniff
 | 401 | Pas de session, ou session expirée | `{"error":"Connexion requise"}` | « Votre session a expiré. Reconnectez-vous. » |
 | 404 | Réservation inexistante, d'un autre compte, ou identifiant mal formé | `{"error":"Réservation introuvable"}` | « Cette réservation est introuvable. » |
 | 409 | Réservation annulée par ce compte | `{"error":"Cette réservation a été annulée : elle n'a plus de billet."}` | « Cette réservation a été annulée : elle n'a plus de billet. » |
+| 429 | Plus de 30 billets en une minute pour ce compte | `{"error":"Trop de billets demandés en peu de temps. Réessayez dans une minute."}` + `Retry-After` | Même phrase |
 | 500 | Le rendu a échoué | `{"error":"Erreur interne du serveur"}` + `X-Trace-Id` | « Le billet n'a pas pu être préparé. Réessayez dans un instant. (réf. *trace*) » |
 | — | Pas de réponse (hors ligne) | — | « Connexion impossible : vérifiez votre réseau, puis réessayez. » |
 | 200 non PDF | Page HTML d'un proxy ou d'un portail Wi-Fi | — | Phrase générique du cas 500, sans onglet vide |
 
 - **Pourquoi 404 et pas 403 :** un 403 avouerait que la réservation existe. Le service vérifie le propriétaire avant toute fabrication, donc aucun PDF n'est produit pour un autre compte.
-- **Comment le 409 est possible :** sur Movies, une annulation supprimait les sièges sans laisser de trace, ce qui aurait donné un 404. Le `DELETE` enregistre désormais `{ bookingId, userId, screeningId, seats, cancelledAt }` dans la collection `cancellations`, et le service la consulte quand la réservation n'est plus trouvée.
+- **Comment le 409 est possible :** sur Movies, une annulation supprimait les sièges sans laisser de trace, ce qui aurait donné un 404. Le `DELETE` enregistre désormais `{ bookingId, userId, screeningId, seats, cancelledAt }` dans la collection `cancellations`, et le service la consulte quand la réservation n'est plus trouvée. Les annulations de plus de 90 jours sont purgées par un index TTL MongoDB : le billet répond alors 404.
+- **Limite de fréquence :** chaque billet est fabriqué à la demande, donc un compte est limité à 30 billets par minute, compteur en mémoire. Au-delà, l'API répond 429 avec `Retry-After`. Un affichage coûte 2 requêtes (vérification, puis onglet) et un enregistrement 1 : la limite ne gêne pas un usage normal. Le compteur en mémoire ne suffirait plus avec plusieurs instances de l'API.
 
 ## §2 — Où le PDF est fabriqué, et pourquoi
 
@@ -263,13 +265,13 @@ GET /me/summaries/7f3c…/file[?download=true]
 
 ```
 $ cd movies-api-loadtest && npm test
-# tests 15
-# pass 15
+# tests 17
+# pass 17
 # fail 0
 
 $ cd movies-web && npm test
  Test Files  3 passed (3)
-      Tests  19 passed (19)
+      Tests  26 passed (26)
 $ npx vue-tsc --build      → aucune erreur
 ```
 
