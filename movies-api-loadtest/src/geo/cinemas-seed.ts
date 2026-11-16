@@ -1,9 +1,6 @@
-// Annuaire de démonstration : cinémas fictifs, placés sur des lieux publics géocodés avec la Géoplateforme (IGN)
-// le 16/11/2026. 7 autour de Lyon, dont 6 à moins de 5 km de la place Bellecour ; Vénissieux est à environ 8 km.
 import type { Collection } from "mongodb";
 import type { Cinema } from "./finders.js";
 
-// [slug, nom, adresse, ville, équipements, latitude, longitude] : ordre du contrat, latitude d'abord.
 const ROWS: [string, string, string, string, string[], number, number][] = [
   ["charite", "Ciné Charité", "6 rue de la Charité", "Lyon", ["vo", "pmr"], 45.755824, 4.832967],
   ["lafayette", "Le Lafayette", "21 cours Lafayette", "Lyon", ["pmr"], 45.763688, 4.844596],
@@ -26,11 +23,9 @@ export const DEMO_CINEMAS: Cinema[] = ROWS.map(([slug, name, address, city, feat
   features,
   latitude,
   longitude,
-  // Même position en GeoJSON pour l'index 2dsphere : [longitude, latitude]. Toujours écrite avec latitude / longitude.
   location: { type: "Point", coordinates: [longitude, latitude] },
 }));
 
-/** Index de la boîte (B-tree composé) et du défi ($geoNear, 2dsphere), puis l'annuaire s'il est vide. */
 export async function ensureCinemas(cinemas: Collection<Cinema>) {
   await cinemas.createIndex({ slug: 1 }, { unique: true });
   await cinemas.createIndex({ latitude: 1, longitude: 1 });

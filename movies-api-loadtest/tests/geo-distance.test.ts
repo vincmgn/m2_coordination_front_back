@@ -1,12 +1,10 @@
-// Chaque valeur attendue vient d'une source indépendante du code : Rosetta Code (« Haversine formula », R = 6 371 km)
-// ou PostGIS 3.6.4 (ST_Distance sur geography, ellipsoïde WGS 84, exécuté le 16/11/2026).
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { boundingBox, EARTH_RADIUS_KM, haversineKm, roundKm } from "../src/geo/distance.js";
 
 const BELLECOUR = [45.7576, 4.8317] as const;
-const PART_DIEU = [45.760597, 4.858748] as const; // place Charles Béraudier
-const REPUBLIQUE = [48.8663, 2.3685] as const; // avenue de la République, Paris
+const PART_DIEU = [45.760597, 4.858748] as const;
+const REPUBLIQUE = [48.8663, 2.3685] as const;
 const near = (actual: number, expected: number, tolerance: number) =>
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} au lieu de ${expected} ± ${tolerance}`);
 

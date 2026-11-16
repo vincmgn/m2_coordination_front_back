@@ -1,7 +1,3 @@
-// Baromètre W/L : historique Win/Loss des derniers runs d'un workflow, lu via l'API GitHub Actions.
-// Le run en cours n'est pas encore terminé : son résultat est passé en variable (CURRENT_CONCLUSION).
-// Usage : GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo WORKFLOW_FILE=perf-suivi.yml \
-//         CURRENT_CONCLUSION=success|failure CURRENT_TITLE="…" node scripts/barometre.mjs
 const API = process.env.GITHUB_API_URL || "https://api.github.com";
 const {
   GITHUB_TOKEN,
@@ -16,7 +12,7 @@ const {
 const SIZE = Number(process.env.BAROMETRE_SIZE || 20);
 
 const ICONS = { success: "✅", failure: "❌" };
-const isCounted = (c) => c === "success" || c === "failure"; // annulés / ignorés : ni W ni L
+const isCounted = (c) => c === "success" || c === "failure";
 
 async function fetchRuns() {
   const res = await fetch(
@@ -40,7 +36,6 @@ function weather(ratio) {
 }
 
 try {
-  // Plus récent en premier ; le run en cours (pas encore « completed ») est ajouté en tête.
   const runs = (await fetchRuns())
     .filter((r) => String(r.id) !== GITHUB_RUN_ID)
     .map((r) => ({
@@ -69,7 +64,6 @@ try {
     console.log("Pas encore assez de runs terminés pour établir un baromètre.");
   } else {
     const ratio = wins / counted.length;
-    // Série en cours : nombre de runs consécutifs avec le même résultat que le plus récent.
     const streakIndex = counted.findIndex((r) => r.conclusion !== counted[0].conclusion);
     const streak = streakIndex === -1 ? counted.length : streakIndex;
     const timeline = [...recent].reverse().map((r) => ICONS[r.conclusion] ?? "⚪").join("");
@@ -84,7 +78,6 @@ try {
     }
   }
 } catch (e) {
-  // Le baromètre est informatif : son échec ne doit pas masquer le résultat du test.
   console.log(`Baromètre indisponible : ${e.message}`);
   console.error(`::warning::Baromètre W/L indisponible : ${e.message}`);
 }

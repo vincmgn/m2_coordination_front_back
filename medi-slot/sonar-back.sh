@@ -1,17 +1,11 @@
 #!/usr/bin/env bash
-# Tests + JaCoCo + analyse SonarQube du back, sans toucher au pom.
-# Usage : read -s SONAR_TOKEN && export SONAR_TOKEN ; ./sonar-back.sh [-Dsonar.projectVersion=1.1 ...]
 set -euo pipefail
 cd "$(dirname "$0")"
-# Jeton local optionnel : .env (ignoré par Git) contenant SONAR_TOKEN=...
 [ -z "${SONAR_TOKEN:-}" ] && [ -f .env ] && { set -a; . ./.env; set +a; }
 : "${SONAR_TOKEN:?SONAR_TOKEN absent : read -s SONAR_TOKEN && export SONAR_TOKEN, ou le mettre dans .env}"
 
-# Cache Maven dans un volume Docker, rendu accessible à l'utilisateur courant.
 docker run --rm -v medislot-m2:/m2 maven:3.9-eclipse-temurin-25 chown "$(id -u):$(id -g)" /m2
 
-# Maven en conteneur ; le socket Docker sert à Testcontainers (PostgreSQL des tests d'intégration).
-# Le dépôt est monté entier pour que SonarQube lise l'historique Git (date du nouveau code).
 docker run --rm \
   --user "$(id -u):$(id -g)" --group-add "$(stat -c %g /var/run/docker.sock)" \
   --add-host=host.docker.internal:host-gateway \

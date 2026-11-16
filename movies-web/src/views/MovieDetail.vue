@@ -92,7 +92,6 @@ const list = (values?: string[]) => values?.filter(Boolean).join(', ')
         </template>
       </dl>
 
-      <!-- Modifier / Supprimer : comptes administrateurs seulement (le back refuse aussi : 401 / 403). -->
       <div v-if="user?.admin" class="actions">
         <RouterLink :to="`/movies/${movie._id}/edit`" class="btn">Modifier</RouterLink>
         <button class="btn btn-danger" :disabled="deleting" @click="remove">

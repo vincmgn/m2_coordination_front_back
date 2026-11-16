@@ -1,4 +1,3 @@
-// Messages d'erreur de l'API : un refus métier garde le message du back, une panne affiche la référence de trace.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, getMovie, listMyBookings } from './api'
 

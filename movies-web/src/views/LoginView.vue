@@ -15,7 +15,6 @@ const name = ref('')
 const error = ref<string | null>(null)
 const saving = ref(false)
 
-// Retour à la page demandée avant la connexion (chemin interne uniquement, cf. safeRedirect).
 const redirect = safeRedirect(route.query.redirect)
 
 async function submit() {

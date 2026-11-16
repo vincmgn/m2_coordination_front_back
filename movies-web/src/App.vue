@@ -69,7 +69,6 @@ async function signOut() {
   text-decoration: none;
 }
 
-/* Lampe du projecteur. */
 .lamp {
   width: 0.85rem;
   height: 0.85rem;

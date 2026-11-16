@@ -1,37 +1,33 @@
 import { formatDay, formatInstant, formatTime } from "./formats.js";
 
-// Cinéma fictif : toutes les séances ont lieu dans la même salle (cf. routes/screenings.ts).
 export const CINEMA = { name: "Cinéma Movies", room: "Salle 1", address: "1 place des Lumières, 69008 Lyon" };
 
-// Tout ce que le billet imprime, déjà mis en forme : le rendu ne fait qu'afficher, aucun calcul.
 export interface TicketView {
-  reference: string; // numéro de réservation
+  reference: string;
   spectatorName: string;
   movieTitle: string;
-  movieYear: string; // « 1999 », ou vide
-  day: string; // « mardi 24 novembre 2026 »
-  time: string; // « 21 h 00 », heure de Paris
-  seats: string; // « E5, E6 »
-  placeCount: string; // « 2 »
-  placeLabel: string; // « places » ou « place »
-  posterColor: string; // même couleur que l'affiche de remplacement du front (MoviePoster.vue)
+  movieYear: string;
+  day: string;
+  time: string;
+  seats: string;
+  placeCount: string;
+  placeLabel: string;
+  posterColor: string;
   cinema: string;
   room: string;
   address: string;
-  bookedOn: string; // « 21 novembre 2026 à 9 h 30 », heure de Paris
+  bookedOn: string;
   issuedOn: string;
 }
 
 export interface TicketBooking {
   bookingId: string;
-  screeningId: string; // <id du film>-<AAAAMMJJ>-<HHMM>, heure de Paris
+  screeningId: string;
   seats: string[];
   name: string;
   createdAt: Date;
 }
 
-// Couleur stable par titre, même calcul que movies-web/src/posterColor.ts (affiche de remplacement du front).
-// Les deux côtés testent la même table de référence (tests/ticket-service.test.ts et posterColor.test.ts).
 const POSTER_COLORS = ["#ffb547", "#7ce0c3", "#ff7a9a", "#b7a6ff", "#f3f1ec", "#8fc9ff"];
 export const posterColor = (title: string) => POSTER_COLORS[[...title].reduce((sum, c) => sum + c.charCodeAt(0), 0) % POSTER_COLORS.length]!;
 

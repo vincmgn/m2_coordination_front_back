@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { createMovie, getMovie, listGenres, updateMovie, type MovieInput } from '@/api'
 
-// Sans id : création ; avec id : modification du film existant.
 const props = defineProps<{ id?: string }>()
 const router = useRouter()
 const isEdit = computed(() => Boolean(props.id))
@@ -35,7 +34,6 @@ onMounted(async () => {
 })
 
 async function submit() {
-  // Seuls les champs remplis sont envoyés ; l'API valide à nouveau (title obligatoire, year entier…).
   const payload: MovieInput = { title: form.title.trim(), genres: form.genres }
   if (form.year) payload.year = Number(form.year)
   if (form.poster.trim()) payload.poster = form.poster.trim()

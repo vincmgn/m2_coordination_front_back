@@ -1,5 +1,3 @@
-// Le PDF lui-même : vrai modèle, vrai moteur, sans base ni serveur.
-// On lit le texte extrait (jamais les octets bruts, qui changent à chaque génération : date, identifiants).
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { before, describe, it } from "node:test";
@@ -26,7 +24,7 @@ let text: string;
 before(async () => {
   pdf = await renderTicket(view);
   mkdirSync("tests/out", { recursive: true });
-  writeFileSync("tests/out/billet-exemple.pdf", pdf); // à relire comme un spectateur
+  writeFileSync("tests/out/billet-exemple.pdf", pdf);
   doc = await getDocument({ data: new Uint8Array(pdf), verbosity: 0 }).promise;
   const page = await doc.getPage(1);
   text = (await page.getTextContent()).items.map((i) => ("str" in i ? i.str : "")).join(" ");
@@ -50,7 +48,6 @@ describe("billet PDF", () => {
 
   it("embarque ses polices : aucune police standard non embarquée", () => {
     const raw = pdf.toString("latin1");
-    // Chaque police apparaît deux fois (Type0 et sa police descendante) : on compte les noms distincts.
     const fonts = [...new Set([...raw.matchAll(/\/BaseFont \/([^\s/]+)/g)].map((m) => m[1]))];
     assert.ok(fonts.length >= 2);
     for (const font of fonts) assert.match(font!, /^[A-Z]{6}\+DejaVuSans/, `police non embarquée : ${font}`);

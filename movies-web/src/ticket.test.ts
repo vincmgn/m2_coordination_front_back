@@ -1,4 +1,3 @@
-// Billet PDF côté front : contrat de l'appel, traduction des codes, onglet et mémoire.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type Browser,
@@ -109,15 +108,12 @@ describe('Affichage et mémoire', () => {
     const blob = vi.spyOn(response, 'blob')
     const fetchMock = answer(response)
     const pending = openTicket(ID, b)
-    // Ouvert pendant le clic, avant toute réponse : sinon le navigateur le bloque.
     expect(b.openTab).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     await pending
     expect(b.openTab.mock.invocationCallOrder[0]).toBeLessThan(fetchMock.mock.invocationCallOrder[0]!)
-    // Pas de blob: : le bouton « Télécharger » du lecteur PDF relit cette URL, avec le nom donné par le serveur.
     expect(tab.show).toHaveBeenCalledWith(`/api/screenings/mine/${ID}/ticket.pdf`)
     expect(b.createObjectURL).not.toHaveBeenCalled()
-    // Vérification seulement : le PDF n'est pas lu (l'onglet le recharge depuis le serveur).
     expect(blob).not.toHaveBeenCalled()
   })
 

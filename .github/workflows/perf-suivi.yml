@@ -1,10 +1,7 @@
 name: "Suivi des performances (TP k6 + GitHub Issues)"
-# Titre du run (repris par le baromètre) : la charge et le déclenchement.
 run-name: "Suivi perf : ${{ github.event_name == 'schedule' && '5' || inputs.vus }} VUs (${{ github.event_name }})"
 
-# Lecture mesurée : GET /movies (load-tests/paliers.ts), seuils du TP : p95 < 500 ms, erreurs < 1 %, checks 100 %.
 on:
-  # Lancement manuel (onglet Actions > Run workflow), avec la charge choisie : essais A à D.
   workflow_dispatch:
     inputs:
       vus:
@@ -12,27 +9,18 @@ on:
         type: number
         required: true
         default: 5
-  # Lancement programmé : du lundi au vendredi à 7 h 17, heure de Paris (essai E).
-  # Minute 17 et non 0 : GitHub retarde davantage les lancements en début d'heure.
-  # Rappels : ne s'exécute que sur la branche par défaut (main), peut être retardé,
-  # et est désactivé après 60 jours sans activité sur un dépôt public.
   schedule:
     - cron: "17 7 * * 1-5"
       timezone: "Europe/Paris"
 
-# Droits minimaux du GITHUB_TOKEN : lecture seule par défaut. Seul le job « publish » peut écrire des tickets,
-# et il ne lance ni l'API ni k6 ni les dépendances npm.
 permissions:
   contents: read
 
-# Un seul suivi à la fois sur tout le dépôt : les lancements suivants attendent au lieu de s'exécuter en parallèle.
-# Deux runs ne peuvent donc jamais publier le même incident en même temps.
 concurrency:
   group: perf-suivi
   cancel-in-progress: false
 
 env:
-  # Charge du lancement programmé, définie à l'avance (aucune saisie manuelle).
   SCHEDULED_VUS: 5
   DURATION: 1m
   PERF_ROUTE: "GET /movies?page=<1..50>&limit=20"
@@ -44,7 +32,6 @@ env:
 
 jobs:
   perf:
-    # Version figée : même machine d'un run à l'autre, donc mesures comparables.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
@@ -54,7 +41,6 @@ jobs:
       run:
         working-directory: movies-api-loadtest
 
-    # Laboratoire isolé : MongoDB jetable, détruite automatiquement à la fin du job.
     services:
       mongo:
         image: mongo:8.0
@@ -78,7 +64,6 @@ jobs:
         env:
           INPUT_VUS: ${{ inputs.vus }}
         run: |
-          # Programmé : charge fixe. Manuel : charge saisie, validée avant usage.
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then VUS=$SCHEDULED_VUS; else VUS=$INPUT_VUS; fi
           if ! [[ "$VUS" =~ ^[0-9]+$ ]] || [ "$VUS" -lt 1 ] || [ "$VUS" -gt 2000 ]; then
             echo "::error::Charge invalide : '$VUS' (entier entre 1 et 2000 attendu)."
@@ -100,7 +85,6 @@ jobs:
           mkdir -p "$REPORTS"
           nohup npm start > "$REPORTS/server.log" 2>&1 &
           echo $! > api.pid
-          # Disponible = la route mesurée répond 200 avec des données (pas seulement un port ouvert).
           for _ in $(seq 1 60); do
             if curl -sf "$API_URL/movies?limit=1" | grep -q '"total":[1-9]'; then
               echo "API disponible"
@@ -112,7 +96,6 @@ jobs:
           cat "$REPORTS/server.log"
           exit 1
 
-      # Le code de sortie de k6 est conservé au lieu de faire échouer l'étape : il est interprété juste après.
       - name: Test k6
         id: k6
         if: steps.api.outcome == 'success'
@@ -141,7 +124,6 @@ jobs:
           [ -f api.pid ] && kill "$(cat api.pid)" 2>/dev/null || true
           echo "API arrêtée ; le conteneur MongoDB est supprimé automatiquement en fin de job."
 
-      # Rapports consultables même après un échec : résumé JSON, résultat interprété, rapport HTML, journaux.
       - name: Enregistrement des rapports
         if: always()
         uses: actions/upload-artifact@v7
@@ -151,7 +133,6 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      # L'échec du workflow est préservé quand un seuil est dépassé, et signalé différemment d'un problème technique.
       - name: Verdict
         if: always()
         env:
@@ -163,10 +144,8 @@ jobs:
             *) echo "::error::Problème technique : le test n'a pas permis de conclure sur les performances."; exit 1 ;;
           esac
 
-  # Appels à l'API GitHub après le test, hors de la boucle de charge, avec le jeton automatique du workflow.
   publish:
     needs: perf
-    # Toujours exécuté (même si perf a échoué sur un seuil), dès qu'un résultat interprété existe.
     if: always() && needs.perf.outputs.result != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -190,7 +169,6 @@ jobs:
           RESULT_JSON: ${{ needs.perf.outputs.result }}
         run: node movies-api-loadtest/scripts/perf-issue.mjs
 
-  # Baromètre W/L : historique des derniers runs, affiché dans le résumé (lecture seule de l'historique Actions).
   barometre:
     needs: [perf, publish]
     if: always()
@@ -216,6 +194,5 @@ jobs:
           CURRENT_CONCLUSION: ${{ needs.perf.result }}
           CURRENT_TITLE: ${{ github.event_name == 'schedule' && '5' || inputs.vus }} VUs
         run: |
-          # github.workflow_ref = owner/repo/.github/workflows/<fichier>@ref : on garde le nom du fichier.
           WORKFLOW_FILE=$(basename "${WORKFLOW_FILE%@*}")
           node movies-api-loadtest/scripts/barometre.mjs | tee -a "$GITHUB_STEP_SUMMARY"

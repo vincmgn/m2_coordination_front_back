@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Rollback manuel : remet en service une version déjà construite de l'API (par défaut la précédente).
-# Seul le conteneur api change : la base et ses données ne sont pas touchées.
-# Usage : scripts/rollback.sh [version]
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source scripts/deploy-lib.sh

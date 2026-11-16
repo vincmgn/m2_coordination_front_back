@@ -1,5 +1,3 @@
-// Construit le tableau Markdown du test de rupture à partir des exports JSON de k6.
-// Usage : node scripts/breakpoint-report.mjs <dossier des rapports> <route>...
 import { readFileSync } from "node:fs";
 
 const [dir, ...routes] = process.argv.slice(2);
@@ -13,7 +11,6 @@ const fmt = (n) => Math.round(n).toLocaleString("fr-FR");
 
 const rows = routes.map((route) => {
   const m = JSON.parse(readFileSync(`${dir}/breakpoint-${route}.json`, "utf8")).metrics;
-  // Dans l'export k6, un seuil à true est un seuil dépassé.
   const broken = Object.entries(THRESHOLD_LABELS)
     .filter(([metric]) => Object.values(m[metric]?.thresholds ?? {}).includes(true))
     .map(([, label]) => label);

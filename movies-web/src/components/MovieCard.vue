@@ -36,7 +36,6 @@ defineProps<{ movie: MovieSummary }>()
     box-shadow 0.2s;
 }
 
-/* Survol : l'affiche s'éclaire comme sous le projecteur. */
 .card:hover :deep(img),
 .card:hover :deep(.placeholder) {
   transform: translateY(-4px);

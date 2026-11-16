@@ -1,5 +1,3 @@
-// Règles métier du billet : droits avant fabrication, 404 / 409, nom de fichier, heure de Paris.
-// Fuseau du processus volontairement différent de Paris : le résultat ne doit pas en dépendre.
 process.env.TZ = "America/New_York";
 
 import assert from "node:assert/strict";
@@ -78,7 +76,6 @@ describe("heure de Paris", () => {
 });
 
 describe("couleur de l'affiche", () => {
-  // Même table que movies-web/src/posterColor.test.ts : le billet et « Mes séances » gardent la même couleur.
   const REFERENCE = { Psycho: "#ffb547", Amélie: "#7ce0c3", Heat: "#ff7a9a", Alien: "#b7a6ff", Vertigo: "#f3f1ec", Matrix: "#8fc9ff" };
   it("même couleur que le front pour chaque titre de référence", () => {
     for (const [title, color] of Object.entries(REFERENCE)) assert.equal(posterColor(title), color, title);

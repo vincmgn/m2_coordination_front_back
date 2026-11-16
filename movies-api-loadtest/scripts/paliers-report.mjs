@@ -1,11 +1,8 @@
-// Construit le tableau Markdown du test par paliers à partir des exports JSON de k6.
-// Usage : node scripts/paliers-report.mjs <dossier des rapports> <vus>...
 import { readFileSync } from "node:fs";
 
 const [dir, ...paliers] = process.argv.slice(2);
 const fmt = (n, digits = 0) => n.toLocaleString("fr-FR", { maximumFractionDigits: digits });
 
-// Dans l'export k6, un seuil à true est un seuil dépassé.
 const brokenThresholds = (metric) =>
   Object.entries(metric?.thresholds ?? {})
     .filter(([, crossed]) => crossed)

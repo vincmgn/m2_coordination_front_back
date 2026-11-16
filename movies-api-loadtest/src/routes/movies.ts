@@ -59,7 +59,6 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
-// Champs modifiables par l'API, et rien d'autre : pas de champ inconnu, pas d'opérateur MongoDB ($…), pas de __proto__.
 const FIELDS = ["title", "year", "genres", "plot", "poster"] as const;
 const MAX = { title: 200, plot: 2000, poster: 500, genre: 40, genres: 10 };
 
@@ -72,7 +71,6 @@ function isHttpsUrl(value: string) {
   }
 }
 
-// Valide le corps et renvoie un NOUVEL objet ne contenant que les champs autorisés, nettoyés.
 function validateMovie(body: unknown, options: { partial: false }): Movie;
 function validateMovie(body: unknown, options: { partial: true }): Partial<Movie>;
 function validateMovie(body: unknown, { partial }: { partial: boolean }): Partial<Movie> {
@@ -143,10 +141,8 @@ router.get("/", async (req, res) => {
   res.json({ page, limit, total, totalPages: Math.ceil(total / limit), data });
 });
 
-// Recherche réactive (voir search.ts). Déclarée avant /:id, comme /genres.
 router.get("/search", searchMovies);
 
-// Déclarée avant /:id pour que "genres" ne soit pas pris pour un identifiant.
 router.get("/genres", async (_req, res) => {
   const genres = await movies().distinct("genres");
   res.json(genres.filter((g): g is string => typeof g === "string").sort());
@@ -159,7 +155,7 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
-  await requireAdmin(req); // lecture publique, écriture réservée aux administrateurs
+  await requireAdmin(req);
   const movie = validateMovie(req.body, { partial: false });
   const { insertedId } = await movies().insertOne(movie);
   res
@@ -168,9 +164,8 @@ router.post("/", async (req, res) => {
     .json({ ...movie, _id: insertedId });
 });
 
-// Mise à jour partielle : seuls les champs envoyés sont modifiés ($set), les autres sont conservés.
 router.put("/:id", async (req, res) => {
-  await requireAdmin(req); // lecture publique, écriture réservée aux administrateurs
+  await requireAdmin(req);
   const _id = parseId(req.params.id);
   const changes = validateMovie(req.body, { partial: true });
   const updated = await movies().findOneAndUpdate({ _id }, { $set: changes }, { returnDocument: "after" });
@@ -179,7 +174,7 @@ router.put("/:id", async (req, res) => {
 });
 
 router.delete("/:id", async (req, res) => {
-  await requireAdmin(req); // lecture publique, écriture réservée aux administrateurs
+  await requireAdmin(req);
   const { deletedCount } = await movies().deleteOne({ _id: parseId(req.params.id) });
   if (deletedCount === 0) throw notFound();
   res.status(204).end();

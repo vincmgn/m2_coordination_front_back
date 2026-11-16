@@ -1,9 +1,5 @@
 name: "movies-api-loadtest : bilan de charge complet"
 
-# Bilan complet (~8 min) : montée progressive, débit maximal, rupture et paliers, sorti de la CI des push pour la garder rapide.
-# - Bouton "Run workflow" (onglet Actions) : au choix sur la base jetable ou sur Atlas
-#   (secret MONGODB_URI requis + accès réseau Atlas ouvert à 0.0.0.0/0).
-# - Programmé : chaque lundi à 6 h 43, heure de Paris, sur la base jetable.
 on:
   workflow_dispatch:
     inputs:
@@ -19,14 +15,12 @@ on:
 permissions:
   contents: read
 
-# Un bilan à la fois ; un nouveau lancement attend la fin du précédent.
 concurrency:
   group: movies-bilan-charge
   cancel-in-progress: false
 
 jobs:
   bilan:
-    # Version figée : même machine d'un run à l'autre, donc résultats comparables.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
@@ -86,7 +80,6 @@ jobs:
           cat server.log
           exit 1
 
-      # continue-on-error : un seuil dépassé ne doit pas empêcher les tests suivants ni l'enregistrement des rapports.
       - name: "Simulation 1 : montée en charge progressive"
         id: progressif
         continue-on-error: true
@@ -97,13 +90,11 @@ jobs:
         continue-on-error: true
         run: npm run -s load:max -- --quiet 2>&1 | tee k6-max.txt
 
-      # Ici, un seuil cassé est le résultat attendu (le point de rupture) : seule une vraie erreur fait échouer l'étape.
       - name: "Simulation 3 : test de rupture par route"
         id: rupture
         continue-on-error: true
         run: npm run -s load:breakpoint
 
-      # Même logique : le premier palier en échec est le résultat ; seule une erreur technique fait échouer l'étape.
       - name: "Simulation 4 : paliers d'utilisateurs virtuels"
         id: paliers
         continue-on-error: true
@@ -122,7 +113,6 @@ jobs:
               [ -f "$f" ] || continue
               echo "### ${f%.txt}"
               echo '```'
-              # Commence à THRESHOLDS s'il y a des seuils, sinon à TOTAL RESULTS (cas de load:max).
               sed -n '/█ \(THRESHOLDS\|TOTAL RESULTS\)/,$p' "$f"
               echo '```'
             done
@@ -140,15 +130,12 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
 
-      # Le job échoue si un seuil des simulations 1 et 2 casse (régression) ou si les simulations 3 et 4 plantent,
-      # une fois les rapports enregistrés.
       - name: Verdict
         if: steps.progressif.outcome == 'failure' || steps.max.outcome == 'failure' || steps.rupture.outcome == 'failure' || steps.paliers.outcome == 'failure'
         run: |
           echo "::error::Au moins une simulation k6 a échoué (seuil dépassé ou erreur) : voir le résumé et les rapports."
           exit 1
 
-  # Baromètre W/L : historique des derniers runs, affiché dans le résumé (lecture seule de l'historique Actions).
   barometre:
     needs: bilan
     if: always()
@@ -174,6 +161,5 @@ jobs:
           CURRENT_CONCLUSION: ${{ needs.bilan.result }}
           CURRENT_TITLE: ${{ github.event.head_commit.message || github.event_name }}
         run: |
-          # github.workflow_ref = owner/repo/.github/workflows/<fichier>@ref : on garde le nom du fichier.
           WORKFLOW_FILE=$(basename "${WORKFLOW_FILE%@*}")
           node movies-api-loadtest/scripts/barometre.mjs | tee -a "$GITHUB_STEP_SUMMARY"

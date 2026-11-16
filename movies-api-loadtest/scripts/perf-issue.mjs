@@ -1,10 +1,3 @@
-// Suivi des incidents de performance dans GitHub Issues, à partir du résultat interprété (perf-result.mjs).
-//   seuil dépassé       → crée un ticket, ou commente le ticket ouvert du même problème (nouvelle occurrence)
-//   seuils respectés    → commente le ticket ouvert s'il existe (retour sous les seuils) ; ne ferme JAMAIS
-//   problème technique  → aucune publication : les mesures ne permettent pas de conclure
-// Usage : RESULT_JSON='{…}' GITHUB_TOKEN=… GITHUB_REPOSITORY=owner/repo node scripts/perf-issue.mjs
-// Codes de sortie : 0 = publication faite ou inutile, 1 = résultat inexploitable, 2 = appel GitHub refusé.
-
 import { appendFileSync } from "node:fs";
 
 const LABEL = "performance";
@@ -13,7 +6,6 @@ const { GITHUB_TOKEN, GITHUB_REPOSITORY, RESULT_JSON, GITHUB_RUN_ID, GITHUB_RUN_
 
 class GitHubError extends Error {}
 
-// Affiche le message dans le journal ET dans le résumé du run (bloc « publish summary »), avec le lien du ticket.
 function outcome(message, { error = false } = {}) {
   console[error ? "error" : "log"](error ? `::error::${message}` : message);
   if (process.env.GITHUB_STEP_SUMMARY) {
@@ -23,7 +15,6 @@ function outcome(message, { error = false } = {}) {
 const link = (i) => `[ticket #${i.number}](${i.html_url})`;
 
 async function github(method, path, body) {
-  // Nouvelle tentative uniquement pour les erreurs passagères (limite de débit, panne côté GitHub).
   for (let attempt = 1; ; attempt++) {
     const res = await fetch(`${API}${path}`, {
       method,
@@ -47,7 +38,6 @@ async function github(method, path, body) {
   }
 }
 
-// Récupère toutes les pages d'une liste (100 éléments par page).
 async function githubList(path) {
   const items = [];
   for (let page = 1; ; page++) {
@@ -123,12 +113,9 @@ async function main() {
   }
 
   const repoPath = `/repos/${GITHUB_REPOSITORY}`;
-  // Empreinte stable du problème : même route + même scénario = même ticket, quelle que soit la charge.
   const fingerprint = `<!-- perf-fingerprint: ${r.route} | ${r.scenario.script} -->`;
-  // Marqueur du run : relancer le même run ne publie pas deux fois.
   const runMarker = `<!-- perf-run: ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT ?? 1} -->`;
 
-  // Liste (et non recherche, indexée avec retard) des tickets ouverts du label, puis filtre sur l'empreinte.
   const openIssues = await githubList(`${repoPath}/issues?state=open&labels=${LABEL}`);
   const issue = openIssues.find((i) => !i.pull_request && i.body?.includes(fingerprint));
 

@@ -15,24 +15,17 @@ import { seedTpDemo } from "./tp-demo.js";
 
 type AppError = Error & { status?: number; type?: string };
 
-// Version déployée (fixée dans l'image Docker au build), affichée sur GET / pour vérifier un déploiement ou un rollback.
 const APP_VERSION = process.env.APP_VERSION ?? "dev";
-// Ralentissement artificiel, uniquement pour simuler une version défectueuse (démo de rollback). 0 par défaut.
 const ARTIFICIAL_DELAY_MS = Number(process.env.ARTIFICIAL_DELAY_MS) || 0;
 
 const app = express();
 app.disable("x-powered-by");
-// Derrière nginx (ou le proxy Vite) : l'IP du client vient de X-Forwarded-For, mais seulement si la requête
-// arrive d'une adresse locale ou privée (le proxy). Un client direct ne peut pas usurper son IP avec cet en-tête.
 app.set("trust proxy", "loopback, linklocal, uniquelocal");
 app.use(securityHeaders);
 app.use(noStoreByDefault);
 app.use(csrfGuard);
-// Corps JSON petits (le plus gros est une réservation) ; strict : uniquement un objet ou un tableau.
 app.use(express.json({ limit: "16kb", strict: true }));
 
-// Identifiant de la trace en cours, renvoyé dans X-Trace-Id : le front l'affiche dans ses messages d'erreur,
-// le support le recopie dans le ticket. Sans instrumentation, le contexte est invalide et rien n'est ajouté.
 app.use((_req: Request, res: Response, next: NextFunction) => {
   const ctx = trace.getActiveSpan()?.spanContext();
   if (ctx && trace.isSpanContextValid(ctx)) res.set("X-Trace-Id", ctx.traceId);
@@ -99,12 +92,9 @@ app.use((err: AppError, _req: Request, res: Response, next: NextFunction) => {
   }
 
   const status = err.status ?? 500;
-  // Une HttpError est une réponse voulue (ex. 503 simulé) : son message est montré tel quel.
-  // Toute autre erreur 5xx est un bug : on la journalise et on masque ses détails.
   const unexpected = status >= 500 && !(err instanceof HttpError);
   if (unexpected) {
     console.error(err);
-    // Événement « exception » (type, message, pile) sur le span en cours : Jaeger l'affiche sous error=true.
     const span = trace.getActiveSpan();
     span?.recordException(err);
     span?.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
@@ -126,7 +116,6 @@ try {
   process.exit(1);
 }
 
-// Express 5 passe au callback l'éventuelle erreur d'écoute (port déjà utilisé…).
 const server = app.listen(PORT, (error) => {
   if (error) {
     console.error(`Impossible d'écouter sur le port ${PORT} :`, error.message);

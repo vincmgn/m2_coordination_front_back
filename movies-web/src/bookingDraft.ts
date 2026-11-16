@@ -4,7 +4,6 @@ const CONTACT_KEY = "booking:contact";
 const seatsKey = (screeningId: string) => `booking:seats:${screeningId}`;
 const pendingKey = (screeningId: string) => `booking:pending:${screeningId}`;
 
-// Réservation cliquée pendant une panne de l'API : renvoyée à son retour, avec le même requestId (pas de doublon).
 export interface PendingBooking {
   requestId: string;
   seats: string[];
@@ -25,7 +24,6 @@ function write(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // stockage plein ou bloqué : le brouillon est simplement perdu
   }
 }
 
@@ -33,7 +31,6 @@ function remove(key: string) {
   try {
     localStorage.removeItem(key);
   } catch {
-    // idem
   }
 }
 

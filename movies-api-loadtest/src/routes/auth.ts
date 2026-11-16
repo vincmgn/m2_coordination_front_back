@@ -7,27 +7,16 @@ import { HttpError } from "../http-error.js";
 import { clientIp, rateLimiter } from "../rate-limit.js";
 import { cleanText } from "../security.js";
 
-// Authentification volontairement simple : e-mail + mot de passe, session côté serveur.
-//
-// Mot de passe : haché avec scrypt (sel aléatoire par compte), jamais stocké en clair.
-// Session : jeton aléatoire (256 bits) dans un cookie httpOnly « session », SameSite=Strict. La base ne garde que
-// l'empreinte SHA-256 du jeton et sa date d'expiration (index TTL) : une fuite de la base ne donne aucune session.
-// Force brute : connexions limitées par IP et par e-mail, inscriptions par IP. Une connexion avec un e-mail inconnu
-// coûte le même calcul scrypt qu'un mot de passe faux : le temps de réponse ne dit pas si le compte existe.
-// Administration : les comptes dont l'e-mail figure dans ADMIN_EMAILS (liste séparée par des virgules) peuvent
-// créer, modifier et supprimer des films. Aucun compte n'est administrateur par défaut.
-// Le front et l'API partagent l'origine (proxy /api) : le cookie part avec chaque appel, sans CORS.
-
 const COOKIE = "session";
 const MAX_PASSWORD = 200;
-const SESSION_MS = 7 * 24 * 60 * 60 * 1000; // 7 jours
+const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 const MIN_PASSWORD = 8;
 
 interface User {
   _id: ObjectId;
   email: string;
   name: string;
-  passwordHash: string; // <sel hex>:<clé dérivée hex>
+  passwordHash: string;
   createdAt: Date;
 }
 
@@ -74,7 +63,6 @@ export const isAdmin = (u: Pick<User, "email">) => adminEmails().has(u.email);
 
 const publicUser = (u: Pick<User, "_id" | "email" | "name">) => ({ id: u._id, email: u.email, name: u.name, admin: isAdmin(u) });
 
-// Utilisateur connecté, ou null. Utilisable par les autres routes (réservation, « Mes séances »).
 export async function currentUser(req: Request) {
   const token = tokenFrom(req);
   if (!token) return null;
@@ -89,7 +77,6 @@ export async function requireUser(req: Request) {
   return user;
 }
 
-// Réservé aux administrateurs (ADMIN_EMAILS) : 401 sans session, 403 pour un compte ordinaire.
 export async function requireAdmin(req: Request) {
   const user = await requireUser(req);
   if (!isAdmin(user)) throw new HttpError(403, "Action réservée aux administrateurs");
@@ -102,7 +89,6 @@ async function openSession(res: Response, userId: ObjectId) {
   res.cookie(COOKIE, token, {
     httpOnly: true,
     sameSite: "strict",
-    // Secure exige HTTPS ; en dev l'API est servie en HTTP derrière le proxy Vite.
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: SESSION_MS,
@@ -120,7 +106,6 @@ function parseCredentials(body: unknown) {
 
 const router = Router();
 
-// Hachage factice : une connexion avec un e-mail inconnu fait le même calcul qu'un mot de passe faux.
 const DUMMY_HASH = hashPassword(randomBytes(16).toString("hex"));
 
 const loginByIp = rateLimiter({ max: 20, windowMs: 60_000 });
@@ -128,7 +113,6 @@ const loginByEmail = rateLimiter({ max: 10, windowMs: 15 * 60_000 });
 const registerByIp = rateLimiter({ max: 5, windowMs: 60 * 60_000 });
 export const resetAuthLimits = () => [loginByIp, loginByEmail, registerByIp].forEach((l) => l.reset());
 
-// POST /auth/register { email, password, name } : crée le compte et connecte directement.
 router.post("/register", async (req, res) => {
   registerByIp.check(clientIp(req), res, "Trop de comptes créés depuis cette adresse. Réessayez plus tard.");
   const { email, password } = parseCredentials(req.body);
@@ -147,7 +131,6 @@ router.post("/register", async (req, res) => {
   res.status(201).json(publicUser(user));
 });
 
-// POST /auth/login { email, password } : même message d'erreur que l'e-mail ou le mot de passe soit faux.
 router.post("/login", async (req, res) => {
   const tooMany = "Trop de tentatives de connexion. Réessayez dans quelques minutes.";
   loginByIp.check(clientIp(req), res, tooMany);
@@ -160,7 +143,6 @@ router.post("/login", async (req, res) => {
   res.json(publicUser(user));
 });
 
-// POST /auth/logout : supprime la session en base et le cookie.
 router.post("/logout", async (req, res) => {
   const token = tokenFrom(req);
   if (token) await sessions().deleteOne({ token: digest(token) });
@@ -168,7 +150,6 @@ router.post("/logout", async (req, res) => {
   res.status(204).end();
 });
 
-// GET /auth/me : utilisateur connecté (401 sinon).
 router.get("/me", async (req, res) => {
   res.set("Cache-Control", "no-store");
   res.json(publicUser(await requireUser(req)));

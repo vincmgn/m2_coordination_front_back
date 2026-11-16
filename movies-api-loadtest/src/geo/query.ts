@@ -1,4 +1,3 @@
-// Contrat de GET /cinemas?lat=…&lon=… (GEOLOC.md §1). Les refus sont des phrases, affichées telles quelles par le front.
 import { HttpError } from "../http-error.js";
 
 export const DEFAULT_RADIUS_KM = 5;
@@ -7,7 +6,6 @@ export const MAX_LIMIT = 50;
 export const DEFAULT_LIMIT = 6;
 export const FEATURES = ["vo", "imax", "pmr"] as const;
 
-/** Unités : degrés WGS 84 pour lat et lon, kilomètres pour le rayon. page commence à 1, comme GET /movies. */
 export interface NearbyQuery {
   lat: number;
   lon: number;
@@ -21,7 +19,6 @@ type Raw = Record<string, unknown>;
 
 const bad = (message: string) => new HttpError(400, message);
 
-/** Nombre décimal, ou undefined si absent. Le message nomme le paramètre sans recopier la valeur (une position). */
 function number(raw: Raw, name: string): number | undefined {
   const value = raw[name];
   if (value === undefined) return undefined;
@@ -37,16 +34,14 @@ function integer(raw: Raw, name: string, fallback: number): number {
   return Number(value);
 }
 
-/** true si la requête demande une recherche « autour de ». Sans lat, lon ni radiusKm : liste par nom. */
 export const isNearby = (raw: Raw) => raw.lat !== undefined || raw.lon !== undefined || raw.radiusKm !== undefined;
 
-/** Refuse, dans cet ordre, ce qui sort du contrat, avant toute requête MongoDB. */
 export function parseNearbyQuery(raw: Raw): NearbyQuery {
   const lat = number(raw, "lat");
   const lon = number(raw, "lon");
   const radius = number(raw, "radiusKm");
   if (lat === undefined || lon === undefined) throw bad("Indiquez lat et lon ensemble.");
-  if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw bad("Latitude invalide : entre -90 et 90 degrés."); // NaN refusé
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw bad("Latitude invalide : entre -90 et 90 degrés.");
   if (!Number.isFinite(lon) || lon < -180 || lon > 180) throw bad("Longitude invalide : entre -180 et 180 degrés.");
   const radiusKm = radius ?? DEFAULT_RADIUS_KM;
   if (!Number.isFinite(radiusKm) || radiusKm <= 0 || radiusKm > MAX_RADIUS_KM) throw bad("Rayon invalide : plus de 0 et au plus 20 km.");
@@ -56,7 +51,6 @@ export function parseNearbyQuery(raw: Raw): NearbyQuery {
   return { lat, lon, radiusKm, feature: parseFeature(raw), page, limit };
 }
 
-/** Filtre facultatif : vo (version originale), imax, pmr (accessible). */
 export function parseFeature(raw: Raw): string {
   const value = raw.feature;
   if (value === undefined || value === "") return "";

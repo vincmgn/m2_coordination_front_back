@@ -141,7 +141,6 @@ public class DebugController {
 
     @PostMapping("/reserver")
     public Map<String, Object> reserverPour(@RequestParam String email, @RequestParam Long slotId) {
-        // TODO verifier que l'appelant est vraiment administrateur
         Appointment a = adminBooking.book(email, slotId);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", a.id);
@@ -152,11 +151,6 @@ public class DebugController {
 
     private List<String> ancienneVerification(String jeton) {
         List<String> erreurs = new ArrayList<>();
-        // if (jeton == null || jeton.isBlank()) {
-        //     erreurs.add("jeton manquant");
-        // }
-        // String attendu = EXPORT_AWS_SECRET_ACCESS_KEY.substring(0, 8);
-        // if (!attendu.equals(jeton)) { erreurs.add("jeton invalide"); }
         return erreurs;
     }
 }

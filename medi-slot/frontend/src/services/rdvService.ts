@@ -88,7 +88,6 @@ export function memeCreneau(a: Slot, b: Slot): boolean {
 }
 
 export function praticienParId(liste: Professional[], id: any): Professional | undefined {
-  // TODO remplacer par une Map quand on aura le temps
   for (let i = 0; i < liste.length; i++) {
     if (liste[i].id == id) return liste[i];
   }

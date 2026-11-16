@@ -21,7 +21,6 @@ watch(
   { immediate: true },
 )
 
-// Séances regroupées par jour.
 const days = computed(() => {
   const byDay = new Map<string, Screening[]>()
   for (const s of screenings.value) byDay.set(s.date, [...(byDay.get(s.date) ?? []), s])

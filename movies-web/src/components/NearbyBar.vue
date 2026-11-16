@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// « Autour de moi » ou une adresse : deux façons d'obtenir un centre, et un message clair pour chaque refus.
-// La position n'est demandée qu'au clic, jamais au montage du composant (cours, chapitre 1).
 import { ref } from 'vue'
 import { GeoError, geocode, getPosition, roundCoord, type SearchCenter } from '@/geo'
 
@@ -13,7 +11,6 @@ const addressInput = ref<HTMLInputElement | null>(null)
 
 function fail(e: unknown) {
   message.value = e instanceof GeoError ? e.message : 'Une erreur est survenue. Saisissez une adresse ou un code postal.'
-  // Le refus n'est pas un bug, c'est un parcours : on amène le spectateur à la saisie d'adresse.
   if (e instanceof GeoError && ['insecure', 'unsupported', 'denied', 'unavailable', 'timeout'].includes(e.reason)) addressInput.value?.focus()
 }
 
@@ -22,7 +19,6 @@ async function aroundMe() {
   locating.value = true
   try {
     const p = await getPosition()
-    // Arrondie dès réception : la précision au mètre ne sort pas de cette fonction.
     emit('center', { lat: roundCoord(p.lat), lon: roundCoord(p.lon), accuracyM: Math.round(p.accuracyM), label: 'votre position' })
   } catch (e) {
     fail(e)

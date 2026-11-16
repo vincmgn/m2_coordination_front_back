@@ -1,5 +1,4 @@
 :root {
-  /* Direction « Salle obscure » : salle sombre, lumière ambre du projecteur. */
   --bg: #0d0d11;
   --surface: #17171d;
   --surface-2: #26252e;
@@ -37,7 +36,6 @@ body {
   line-height: 1.5;
 }
 
-/* Titres de page : capitales condensées très grasses (axe de chasse d'Archivo). */
 h1,
 h2 {
   font-stretch: 62%;

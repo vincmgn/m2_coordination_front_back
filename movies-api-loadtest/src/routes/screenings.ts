@@ -12,21 +12,6 @@ import { currentUser, requireUser } from "./auth.js";
 import { sendSms, type SmsStatus } from "../sms.js";
 import { TP_TICKETS } from "../tp.js";
 
-// Réservation de places de cinéma (équivalent des créneaux : un siège d'une séance = une place réservable une seule fois).
-//
-// Les séances ne sont pas stockées : chaque film a des séances calculées (3 horaires par jour sur 3 jours)
-// dans une salle fixe. Seules les réservations sont en base, avec un index unique (séance, siège) :
-// MongoDB refuse la deuxième réservation d'un même siège, même si deux clics arrivent en même temps.
-//
-// Temps réel : GET /screenings/:id/events est un flux SSE (Server-Sent Events). Contrat (cf. cours SSE) :
-//   ready         à chaque abonnement, { action: "reload" } : le front relit GET /screenings/:id
-//   seat-updated  après une écriture réussie, { screeningId, seats, status: BOOKED | AVAILABLE } : le front relit
-//   viewers       nombre de navigateurs abonnés à la séance (information publique, sans identité)
-//   : keepalive   commentaire toutes les 15 s, sans action métier
-// Le flux ne contient ni nom ni bookingId : seule la réponse du POST confirme une réservation personnelle.
-// Les événements passent par un EventEmitter en mémoire : suffisant avec une seule instance de l'API
-// (avec plusieurs, il faudrait un bus partagé). Pas de journal : après une coupure, le front relit l'état actuel.
-
 const ROWS = "ABCDEFGH".split("");
 const SEATS_PER_ROW = 12;
 const CAPACITY = ROWS.length * SEATS_PER_ROW;
@@ -43,19 +28,17 @@ interface Reservation {
   phone: string;
   bookingId: ObjectId;
   requestId?: string;
-  userId?: ObjectId; // compte connecté au moment de la réservation (facultatif)
+  userId?: ObjectId;
   createdAt: Date;
-  smsStatus?: SmsStatus; // résultat du SMS de confirmation
+  smsStatus?: SmsStatus;
   smsAt?: Date;
 }
 
 const router = Router();
 const reservations = () => getDB().collection<Reservation>("reservations");
 const movies = () => getDB().collection("movies");
-// Trace des annulations d'un compte : le billet d'une réservation annulée répond 409 au lieu de 404.
 const cancellations = () =>
   getDB().collection<{ bookingId: ObjectId; userId: ObjectId; screeningId: string; seats: string[]; cancelledAt: Date }>("cancellations");
-// Traceur des spans métier. Sans instrumentation chargée, l'API OpenTelemetry ne fait rien (aucun coût).
 const tracer = trace.getTracer("movies-api");
 
 export async function ensureScreeningIndexes() {
@@ -64,7 +47,6 @@ export async function ensureScreeningIndexes() {
   await reservations().createIndex({ requestId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } });
   await reservations().createIndex({ userId: 1 }, { partialFilterExpression: { userId: { $exists: true } } });
   await cancellations().createIndex({ userId: 1, bookingId: 1 });
-  // Purge : MongoDB supprime seul les annulations de plus de 90 jours (le billet répond alors 404 au lieu de 409).
   await cancellations().createIndex({ cancelledAt: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 }
 
@@ -75,19 +57,14 @@ async function findByRequest(screeningId: string, requestId: string) {
   return { bookingId, screeningId, seats: rows.map((r) => r.seat), name: rows[0]!.name, ...anonymousToken(bookingId, rows[0]!.userId) };
 }
 
-// Réservation faite sans compte : seul celui qui a réservé reçoit ce jeton, exigé pour l'annuler.
 const anonymousToken = (bookingId: ObjectId, userId?: ObjectId) => (userId ? {} : { cancelToken: cancelToken(bookingId.toHexString()) });
 
-// Abus : réservations (sièges bloqués, SMS envoyés à n'importe quel numéro) et connexions SSE, par IP.
 const reserveByIp = rateLimiter({ max: 20, windowMs: 10 * 60_000 });
-const smsByPhone = rateLimiter({ max: 3, windowMs: 60 * 60_000 }); // au-delà : réservation acceptée, SMS non envoyé
+const smsByPhone = rateLimiter({ max: 3, windowMs: 60 * 60_000 });
 const cancelByIp = rateLimiter({ max: 30, windowMs: 10 * 60_000 });
 const MAX_STREAMS_PER_IP = 10;
 const streamsByIp = new Map<string, number>();
 
-// --- Séances calculées -------------------------------------------------------------------------
-
-// Date et heure actuelles à Paris, au format « 2026-10-08 » et « 2026-10-08T14:32 » (comparables comme du texte).
 function parisNow() {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-CA", {
@@ -112,7 +89,6 @@ const addDays = (date: string, days: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-// Identifiant de séance : <id du film>-<AAAAMMJJ>-<HHMM>, ex. 573a1390f29313caabcd42e8-20261009-1730.
 const screeningId = (movieId: string, date: string, time: string) => `${movieId}-${date.replaceAll("-", "")}-${time.replace(":", "")}`;
 
 function upcomingScreenings(movieId: string) {
@@ -127,7 +103,6 @@ function upcomingScreenings(movieId: string) {
   return list;
 }
 
-// Vérifie qu'un identifiant correspond à une séance à venir d'un film existant.
 async function findScreening(id: string) {
   const match = id.match(/^([0-9a-f]{24})-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})$/i);
   if (!match) throw new HttpError(400, `Identifiant de séance invalide : "${id}"`);
@@ -158,28 +133,21 @@ function parseSeats(value: unknown): string[] {
   return seats;
 }
 
-// --- Temps réel (SSE) --------------------------------------------------------------------------
-
 type ScreeningEvent = { type: "seat-updated"; screeningId: string; seats: string[]; status: "BOOKED" | "AVAILABLE" } | { type: "viewers"; count: number };
 
 const bus = new EventEmitter();
-bus.setMaxListeners(0); // un écouteur par navigateur connecté : pas de limite artificielle
+bus.setMaxListeners(0);
 const viewers = new Map<string, number>();
 
 const publish = (id: string, event: ScreeningEvent) => bus.emit(id, event);
 
-// Identifiant d'événement local au processus : sert à observer le flux, pas à rejouer un historique.
 let sequence = 0;
 
 function sendEvent(res: Response, event: string, data: unknown) {
-  // Une connexion fermée ne doit pas faire échouer l'opération qui a déclenché l'envoi.
   if (res.writableEnded || res.destroyed) return;
   res.write(`id: ${++sequence}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-// --- Routes ------------------------------------------------------------------------------------
-
-// GET /screenings?movieId=… : séances à venir d'un film, avec le nombre de places libres.
 router.get("/", async (req, res) => {
   const movieId = typeof req.query.movieId === "string" ? req.query.movieId.toLowerCase() : "";
   if (!/^[0-9a-f]{24}$/.test(movieId)) throw new HttpError(400, 'Paramètre "movieId" invalide (24 caractères hexadécimaux)');
@@ -195,14 +163,12 @@ router.get("/", async (req, res) => {
 
 type MovieCard = { _id: ObjectId; title?: string; poster?: string };
 
-// Titres et affiches des films réservés, en une seule requête ($in).
 async function titlesAtOnce(bookings: { screeningId: string }[]) {
   const movieIds = [...new Set(bookings.map((b) => b.screeningId.slice(0, 24)))].map((id) => new ObjectId(id));
   const found = await movies().find<MovieCard>({ _id: { $in: movieIds } }, { projection: { title: 1, poster: 1 } }).toArray();
   return new Map(found.map((m) => [String(m._id), m]));
 }
 
-// TP OpenTelemetry, ticket T2 : une requête par réservation (N+1). Actif avec TP_TICKETS=1.
 async function titlesOneByOne(bookings: { screeningId: string }[]) {
   const titles = new Map<string, MovieCard>();
   for (const b of bookings) {
@@ -213,8 +179,6 @@ async function titlesOneByOne(bookings: { screeningId: string }[]) {
   return titles;
 }
 
-// GET /screenings/mine : réservations du compte connecté (« Mes séances »), passées comprises, de la plus proche à la plus ancienne.
-// Déclarée avant /:id, sinon « mine » serait pris pour un identifiant de séance.
 router.get("/mine", async (req, res) => {
   res.set("Cache-Control", "no-store");
   const user = await requireUser(req);
@@ -243,19 +207,15 @@ router.get("/mine", async (req, res) => {
       name: b.name,
     };
   });
-  // À venir d'abord (la plus proche en premier), puis passées (la plus récente en premier).
   list.sort((a, b) => Number(b.upcoming) - Number(a.upcoming) || (a.upcoming ? 1 : -1) * `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
   res.json(list);
 });
-
-// --- Historique d'une réservation ------------------------------------------------------------
 
 type HistoryType = "RESERVEE" | "SMS_ENVOYE" | "SMS_ECHEC" | "SEANCE_PASSEE";
 
 const LABELS: Partial<Record<HistoryType, string>> = {
   RESERVEE: "Réservation enregistrée : {places}",
   SMS_ENVOYE: "SMS de confirmation envoyé",
-  // TP OpenTelemetry, ticket T3 : avec TP_TICKETS=1, le libellé de l'échec SMS manque.
   ...(TP_TICKETS ? {} : { SMS_ECHEC: "SMS de confirmation non remis (opérateur indisponible)" }),
   SEANCE_PASSEE: "Séance passée",
 };
@@ -264,7 +224,6 @@ function historyLabel(type: HistoryType, seats: string[]) {
   return LABELS[type]!.replace("{places}", seats.join(", "));
 }
 
-// GET /screenings/mine/:bookingId/history : étapes d'une réservation du compte connecté, de la plus ancienne à la plus récente.
 router.get("/mine/:bookingId/history", async (req, res) => {
   res.set("Cache-Control", "no-store");
   const user = await requireUser(req);
@@ -284,7 +243,6 @@ router.get("/mine/:bookingId/history", async (req, res) => {
   res.json({ bookingId: first.bookingId, events: events.map((e) => ({ ...e, label: historyLabel(e.type, seats) })) });
 });
 
-// GET /screenings/:id : la séance, le plan de salle et les sièges déjà réservés.
 router.get("/:id", async (req, res) => {
   const screening = await findScreening(req.params.id);
   res.json({
@@ -294,7 +252,6 @@ router.get("/:id", async (req, res) => {
   });
 });
 
-// GET /screenings/:id/events : flux SSE de la séance.
 router.get("/:id/events", async (req, res) => {
   const screening = await findScreening(req.params.id);
   const id = screening.id;
@@ -309,11 +266,10 @@ router.get("/:id/events", async (req, res) => {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
-    "X-Accel-Buffering": "no", // désactive la mise en mémoire tampon d'un éventuel proxy (nginx)
+    "X-Accel-Buffering": "no",
   });
-  res.write("retry: 2000\n\n"); // le navigateur se reconnecte seul après 2 s en cas de coupure
+  res.write("retry: 2000\n\n");
 
-  // À chaque abonnement (donc aussi après une reconnexion) : le front relit l'état actuel.
   sendEvent(res, "ready", { action: "reload" });
 
   const onEvent = (event: ScreeningEvent) => sendEvent(res, event.type, event);
@@ -321,7 +277,6 @@ router.get("/:id/events", async (req, res) => {
   viewers.set(id, (viewers.get(id) ?? 0) + 1);
   publish(id, { type: "viewers", count: viewers.get(id)! });
 
-  // Heartbeat : commentaire SSE toutes les 15 s, garde la connexion ouverte à travers les proxys.
   const heartbeat = setInterval(() => res.write(": keepalive\n\n"), 15_000);
 
   req.on("close", () => {
@@ -337,7 +292,6 @@ router.get("/:id/events", async (req, res) => {
   });
 });
 
-// POST /screenings/:id/reservations { seats: ["C7", "C8"], name: "Alice", email: "alice@example.com", phone: "06 12 34 56 78" }
 router.post("/:id/reservations", async (req, res) => {
   reserveByIp.check(clientIp(req), res, "Trop de réservations depuis cette adresse. Réessayez plus tard.");
   const screening = await findScreening(req.params.id);
@@ -346,10 +300,8 @@ router.post("/:id/reservations", async (req, res) => {
   if (!name || name.length > 60) throw new HttpError(400, 'Le champ "name" est requis (60 caractères maximum)');
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Le champ "email" est requis et doit être valide');
-  // Téléphone gardé sans espaces, points ni tirets : 8 à 15 chiffres, « + » initial facultatif.
   const phone = typeof req.body?.phone === "string" ? req.body.phone.replace(/[\s.()-]/g, "") : "";
   if (!/^\+?\d{8,15}$/.test(phone)) throw new HttpError(400, 'Le champ "phone" est requis (8 à 15 chiffres, ex. 06 12 34 56 78)');
-  // Facultatif : avec requestId, renvoyer la même demande ne réserve jamais deux fois (idempotence).
   const requestId = req.body?.requestId;
   if (requestId !== undefined && (typeof requestId !== "string" || !/^[0-9a-f-]{36}$/i.test(requestId))) {
     throw new HttpError(400, 'Le champ "requestId" doit être un UUID');
@@ -357,18 +309,15 @@ router.post("/:id/reservations", async (req, res) => {
   if (requestId) {
     const existing = await findByRequest(screening.id, requestId);
     if (existing) {
-      res.status(200).json(existing); // déjà réservée : même réponse, aucune nouvelle écriture ni conversion
+      res.status(200).json(existing);
       return;
     }
   }
 
-  // Connecté : la réservation est rattachée au compte et apparaît dans « Mes séances ».
   const userId = (await currentUser(req))?._id;
 
-  // Span métier : deux identifiants techniques, jamais le nom, l'e-mail ni le téléphone (données personnelles).
   await tracer.startActiveSpan("movies.reservation", { attributes: { "movies.screening.id": screening.id } }, async (span) => {
     try {
-      // Tous les sièges d'une réservation ou aucun : en cas de conflit, on supprime ceux déjà insérés.
       const bookingId = new ObjectId();
       const createdAt = new Date();
       try {
@@ -379,7 +328,6 @@ router.post("/:id/reservations", async (req, res) => {
       } catch (e) {
         if (!(e instanceof MongoBulkWriteError) || e.code !== 11000) throw e;
         await reservations().deleteMany({ screeningId: screening.id, bookingId });
-        // Deux envois simultanés de la même demande : le second tombe sur les sièges du premier, ce n'est pas un conflit.
         const existing = requestId ? await findByRequest(screening.id, requestId) : null;
         if (existing) {
           res.status(200).json(existing);
@@ -395,16 +343,12 @@ router.post("/:id/reservations", async (req, res) => {
       }
       span.setAttribute("movies.booking.id", bookingId.toHexString());
 
-      // Enregistrer, puis notifier : l'événement ne part qu'après l'écriture réussie.
       publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "BOOKED" });
 
-      // SMS de confirmation : le statut est gardé pour l'historique. Le prestataire est lent (≈ 1 s).
-      // Un même numéro ne reçoit pas plus de 3 SMS par heure (envoi de SMS en masse vers un tiers, coût).
       const sms = smsByPhone.take(phone) ? Promise.resolve() : confirmBySms(screening, bookingId, seats, phone);
-      if (TP_TICKETS) await sms; // TP OpenTelemetry, ticket T1 : la réponse attend le prestataire SMS.
+      if (TP_TICKETS) await sms;
       else sms.catch((e) => console.error("SMS de confirmation impossible :", e));
 
-      // Conversion A/B : après l'écriture réussie, jamais au clic. Une panne de la mesure ne fait pas échouer la réservation.
       await recordConversion(req).catch((e) => console.error("Attribution A/B impossible :", e));
       res.status(201).json({ bookingId, screeningId: screening.id, seats, name, ...anonymousToken(bookingId, userId) });
     } catch (e) {
@@ -422,8 +366,6 @@ async function confirmBySms(screening: Awaited<ReturnType<typeof findScreening>>
   if (status) await reservations().updateMany({ screeningId: screening.id, bookingId }, { $set: { smsStatus: status, smsAt: new Date() } });
 }
 
-// DELETE /screenings/:id/reservations/:bookingId : annule une réservation (libère tous ses sièges).
-// Réservation d'un compte : uniquement par ce compte connecté ; sans compte : avec le jeton d'annulation (404 sinon).
 router.delete("/:id/reservations/:bookingId", async (req, res) => {
   cancelByIp.check(clientIp(req), res);
   const screening = await findScreening(req.params.id);
@@ -432,14 +374,9 @@ router.delete("/:id/reservations/:bookingId", async (req, res) => {
   const rows = await reservations().find({ screeningId: screening.id, bookingId }).toArray();
   const seats = rows.map((r) => r.seat);
   if (!seats.length) throw new HttpError(404, "Réservation introuvable");
-  // Réservation rattachée à un compte : seul ce compte peut l'annuler. Pour un autre (ou sans session),
-  // même réponse qu'une réservation inconnue : un 403 avouerait qu'elle existe.
-  // Réservation faite sans compte : le jeton d'annulation (en-tête X-Cancel-Token), reçu seulement par celui qui a
-  // réservé. Le bookingId seul ne suffit pas : un ObjectId est prévisible (heure + compteur).
   const userId = rows[0]!.userId;
   const allowed = userId ? !!(await currentUser(req))?._id.equals(userId) : checkCancelToken(bookingId.toHexString(), req.get("X-Cancel-Token"));
   if (!allowed) throw new HttpError(404, "Réservation introuvable");
-  // Garder la trace de l'annulation (billet → 409), puis libérer les sièges.
   if (userId) await cancellations().insertOne({ bookingId, userId, screeningId: screening.id, seats, cancelledAt: new Date() });
   await reservations().deleteMany({ screeningId: screening.id, bookingId });
   publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "AVAILABLE" });

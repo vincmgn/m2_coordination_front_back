@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Démonstration de bout en bout : une version défectueuse est refusée et l'API revient à la version
-# précédente, sans perte de données (y compris les données écrites juste avant le déploiement raté).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source scripts/deploy-lib.sh
@@ -18,7 +16,6 @@ step "Étape 1 : déploiement de la v1"
 scripts/deploy.sh v1 || exit 1
 
 step "Étape 2 : écriture de données pendant que la v1 est en service"
-# Écrit directement en base : la création de film par l'API est réservée aux administrateurs (ADMIN_EMAILS).
 id=$(docker compose exec -T mongo mongosh --quiet sample_mflix --eval \
   "db.movies.insertOne({ title: 'Film créé avant la v2 ($(date +%H:%M:%S))', year: 2026, genres: ['Drama'] }).insertedId.toHexString()")
 before=$(movie_count)

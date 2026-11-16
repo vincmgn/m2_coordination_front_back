@@ -1,4 +1,3 @@
-// Client de l'API movies-api-loadtest. En dev, /api est relayé par Vite vers http://localhost:3000.
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api'
 
 export interface MovieSummary {
@@ -41,8 +40,6 @@ export interface MovieFilters {
 
 export type MovieInput = Pick<Movie, 'title' | 'year' | 'genres' | 'plot' | 'poster'>
 
-// Erreur renvoyée par l'API ({ error: "..." }) avec son code HTTP.
-// traceId : identifiant de la trace (en-tête X-Trace-Id), affiché « réf. … » pour que le support le recopie.
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -54,8 +51,6 @@ export class ApiError extends Error {
   }
 }
 
-// Message montré à l'utilisateur : celui de l'API pour un refus métier (4xx), un message générique pour une
-// panne (500), avec la référence de trace pour toute erreur serveur.
 function errorMessage(status: number, body: { error?: string } | null, traceId: string) {
   let message = status === 500 ? 'Le service est momentanément indisponible.' : (body?.error ?? `Erreur HTTP ${status}`)
   if (status >= 500 && traceId) message += ` (réf. ${traceId})`
@@ -97,12 +92,10 @@ export const updateMovie = (id: string, changes: Partial<MovieInput>) =>
 
 export const deleteMovie = (id: string) => request<void>(`/movies/${id}`, { method: 'DELETE' })
 
-// --- Séances et réservation de places ---------------------------------------------------------
-
 export interface Screening {
   id: string
-  date: string // AAAA-MM-JJ (heure de Paris)
-  time: string // HH:MM
+  date: string
+  time: string
   capacity: number
   available: number
 }
@@ -121,21 +114,19 @@ export interface Booking {
   screeningId: string
   seats: string[]
   name: string
-  cancelToken?: string // réservation faite sans compte : seule preuve pour l'annuler (gardée en mémoire, jamais stockée)
+  cancelToken?: string
 }
 
 export const listScreenings = (movieId: string) => request<Screening[]>(`/screenings?movieId=${movieId}`)
 
 export const getScreening = (id: string) => request<ScreeningDetail>(`/screenings/${id}`)
 
-// measure : le navigateur participe au test A/B ; sans lui (mode de secours), le back n'attribue pas la réservation.
 export interface Contact {
   name: string
   email: string
   phone: string
 }
 
-// requestId : identifiant de la demande ; la renvoyer (après une panne) ne réserve jamais deux fois.
 export const reserveSeats = (id: string, seats: string[], contact: Contact, requestId: string, measure = false) =>
   request<Booking>(`/screenings/${id}/reservations`, {
     method: 'POST',
@@ -143,19 +134,13 @@ export const reserveSeats = (id: string, seats: string[], contact: Contact, requ
     headers: measure ? { 'X-AB-Measure': '1' } : {},
   })
 
-// Réservation d'un compte : le cookie de session suffit. Sans compte : le jeton reçu à la réservation.
 export const cancelBooking = (id: string, bookingId: string, cancelToken?: string) =>
   request<void>(`/screenings/${encodeURIComponent(id)}/reservations/${encodeURIComponent(bookingId)}`, {
     method: 'DELETE',
     headers: cancelToken ? { 'X-Cancel-Token': cancelToken } : {},
   })
 
-// Flux SSE de la séance : URL à passer à EventSource (même préfixe /api que les autres appels).
 export const screeningEventsUrl = (id: string) => `${BASE_URL}/screenings/${id}/events`
-
-// --- Test A/B ----------------------------------------------------------------------------------
-// Le back affecte la variante (cookie ab_visitor) et enregistre la conversion ; le front ne fait qu'afficher
-// la variante reçue et signaler l'exposition.
 
 export type Variant = 'A' | 'B'
 
@@ -168,13 +153,9 @@ export interface AbAssignment {
 
 export const getAssignment = (signal: AbortSignal) => request<AbAssignment>('/ab/assignment', { signal })
 
-// keepalive : la déclaration part même si la page se ferme juste après. Erreur ignorée : la mesure ne gêne jamais le visiteur.
 export const declareExposure = () =>
   request<void>('/ab/exposure', { method: 'POST', keepalive: true }).catch(() => {})
 
-// --- Recherche réactive ------------------------------------------------------------------------
-
-// Mêmes champs que MovieSummary, avec id au lieu de _id (contrat de la recherche).
 export type SearchItem = Omit<MovieSummary, '_id'> & { id: string }
 
 export interface SearchResponse {
@@ -182,18 +163,14 @@ export interface SearchResponse {
   items: SearchItem[]
 }
 
-// signal : permet d'annuler l'appel (AbortController) quand la saisie change.
 export const searchMovies = (q: string, signal: AbortSignal) =>
   request<SearchResponse>(`/movies/search?${new URLSearchParams({ q })}`, { signal })
-
-// --- Authentification et « Mes séances » -------------------------------------------------------
-// Session dans un cookie httpOnly posé par l'API : le front n'y touche jamais, il est envoyé avec chaque appel.
 
 export interface User {
   id: string
   email: string
   name: string
-  admin: boolean // peut créer, modifier et supprimer des films (le back le vérifie à chaque appel)
+  admin: boolean
 }
 
 export const getMe = () => request<User>('/auth/me')
@@ -228,10 +205,6 @@ export interface BookingHistoryEvent {
 export const getBookingHistory = (bookingId: string) =>
   request<{ bookingId: string; events: BookingHistoryEvent[] }>(`/screenings/mine/${bookingId}/history`)
 
-// --- Cinémas autour de moi (TP Géolocalisation) ----------------------------------------------------
-// latitude, longitude : position du CINÉMA (adresse publique). distanceKm : à vol d'oiseau, arrondie à 0,1 km,
-// null hors recherche « autour de ». La position du spectateur n'est jamais renvoyée.
-
 export interface Cinema {
   slug: string
   name: string
@@ -245,5 +218,4 @@ export interface Cinema {
 
 export const FEATURE_LABELS: Record<string, string> = { vo: 'VO', imax: 'IMAX', pmr: 'Accessible PMR' }
 
-// params : nearbyParams(…) de geo.ts (lat, lon arrondis, radiusKm, page, limit, feature), ou page / limit seuls.
 export const listCinemas = (params: URLSearchParams) => request<Paginated<Cinema>>(`/cinemas?${params}`)

@@ -5,35 +5,19 @@ import { rateLimiter } from "../rate-limit.js";
 import { buildTicket, type TicketStore } from "../ticket/service.js";
 import { requireUser } from "./auth.js";
 
-// GET /screenings/mine/:bookingId/ticket.pdf[?download=true] : billet PDF d'une réservation du compte connecté.
-//
-// Contrat :
-//   200  application/pdf ; Content-Disposition inline (affichage) ou attachment (download=true),
-//        filename="billet-<bookingId>.pdf" ; Cache-Control: no-store ; X-Content-Type-Options: nosniff
-//   401  pas de session                       { error: "Connexion requise" }
-//   404  réservation inconnue ou d'un autre    { error: "Réservation introuvable" }
-//   409  réservation annulée                   { error: "Cette réservation a été annulée : …" }
-//   429  plus de 30 billets en 1 min par compte { error: "Trop de billets demandés…" } + Retry-After
-//   500  le rendu a échoué                     { error: "Erreur interne du serveur" }
-// Un GET qui ne modifie rien : le cookie de session (SameSite=Lax) suffit, pas de jeton CSRF.
-// Le routeur ne fabrique rien : le service vérifie les droits, puis fabrique.
-
 export interface TicketDeps {
   store: TicketStore;
-  userId(req: Request): Promise<string>; // lève 401 sans session
+  userId(req: Request): Promise<string>;
   limit?: { max: number; windowMs: number };
 }
 
 export const TOO_MANY = "Trop de billets demandés en peu de temps. Réessayez dans une minute.";
 
-// Limite par compte : chaque billet est fabriqué à la demande (CPU), un compte ne doit pas pouvoir en demander en boucle.
-// 30 par minute laisse large : un affichage coûte 2 requêtes (vérification, puis l'onglet), un enregistrement 1.
-// Compteur en mémoire (cf. src/rate-limit.ts).
 export function ticketsRouter(deps: TicketDeps) {
   const router = Router();
   const limiter = rateLimiter(deps.limit ?? { max: 30, windowMs: 60_000 });
   router.get("/mine/:bookingId/ticket.pdf", async (req, res) => {
-    res.set("Cache-Control", "no-store"); // erreurs comprises
+    res.set("Cache-Control", "no-store");
     const userId = await deps.userId(req);
     limiter.check(userId, res, TOO_MANY);
     const ticket = await buildTicket(userId, req.params.bookingId, deps.store);
@@ -48,8 +32,6 @@ export function ticketsRouter(deps: TicketDeps) {
   });
   return router;
 }
-
-// --- Implémentation MongoDB ----------------------------------------------------------------------
 
 interface ReservationRow {
   screeningId: string;

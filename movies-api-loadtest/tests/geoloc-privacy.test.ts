@@ -1,10 +1,8 @@
-// La position du spectateur sert à la requête, puis on l'oublie : ni journal (API, nginx), ni stockage, ni trace.
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { describe, it } from "node:test";
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
-// Variables nginx qui contiennent la chaîne de requête (?lat=…&lon=…). $request_method et $request_time sont sans danger.
 const QUERY_STRING = /\$(request(?![_a-z])|request_uri|args|query_string|arg_\w+|is_args)/;
 
 describe("Vie privée de la position", () => {
@@ -32,7 +30,6 @@ describe("Vie privée de la position", () => {
   it("les traces perdent la chaîne de requête : navigateur (url.full) et collecteur (url.query)", () => {
     assert.match(read("../../movies-web/src/tracing.ts"), /StripQueryProcessor/);
     assert.match(read("../observabilite/collector.yaml"), /key: url\.query, action: delete/);
-    // Instrumentation MongoDB : les valeurs des requêtes sont remplacées par « ? » tant que ce réglage n'est pas activé.
     assert.doesNotMatch(read("../docker-compose.yml"), /enhancedDatabaseReporting|OTEL_INSTRUMENTATION_MONGODB_ENHANCED/i);
   });
 
@@ -40,6 +37,6 @@ describe("Vie privée de la position", () => {
     const writes = readdirSync(new URL("../src/", import.meta.url), { recursive: true })
       .map(String)
       .filter((f) => f.endsWith(".ts") && /\b(latitude|longitude|coordinates)\b/.test(read(`../src/${f}`)));
-    assert.deepEqual(writes.sort(), ["geo/cinemas-seed.ts", "geo/distance.ts", "geo/finders.ts", "routes/cinemas.ts"].sort());
+    assert.deepEqual(writes.sort(), ["geo/cinemas-seed.ts", "geo/finders.ts", "routes/cinemas.ts"].sort());
   });
 });

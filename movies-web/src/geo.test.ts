@@ -1,11 +1,9 @@
-// Géolocalisation côté front : position du navigateur et ses refus, paramètres du contrat, affichage, géocodage.
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import {
   GEO_MESSAGES, GeoError, POSITION_OPTIONS, clearGeocodeCache, formatDistance, geocode, geocodeKey,
   getPosition, nearbyParams, roundCoord, type GeoEnv,
 } from './geo';
 
-/** Faux navigateur : répond avec une position, ou avec un code d'erreur 1, 2 ou 3. */
 function fakeEnv(answer: {lat: number; lon: number; accuracy: number} | {code: number}, secure = true): GeoEnv & {calls: PositionOptions[]} {
   const calls: PositionOptions[] = [];
   return {
@@ -21,7 +19,6 @@ function fakeEnv(answer: {lat: number; lon: number; accuracy: number} | {code: n
   };
 }
 
-/** Réponse réduite de la Géoplateforme, relevée le 16/11/2026 (GeoJSON : [lon, lat]). */
 function geoplateforme(coordinates: [number, number], score: number, label: string) {
   return new Response(JSON.stringify({features: [{geometry: {type: 'Point', coordinates}, properties: {label, score, type: 'housenumber'}}]}), {status: 200});
 }

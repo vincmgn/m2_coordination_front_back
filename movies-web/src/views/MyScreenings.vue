@@ -31,11 +31,9 @@ async function cancel(b: MyBooking) {
   }
 }
 
-// Historique d'une réservation (réservée, SMS, séance passée), chargé au premier clic.
 const histories = reactive<Record<string, { open: boolean; events?: BookingHistoryEvent[]; error?: string }>>({})
 
 async function toggleHistory(b: MyBooking) {
-  // Relire l'entrée depuis histories : c'est le proxy réactif (l'objet littéral ne déclencherait aucun rendu).
   histories[b.bookingId] ??= { open: false }
   const h = histories[b.bookingId]!
   h.open = !h.open
@@ -155,8 +153,6 @@ h2 {
   opacity: 0.65;
 }
 
-/* Affiche absente : le « padding: 12% » de MoviePoster se calcule sur la largeur de la carte (137 px de chaque côté),
-   ce qui élargissait la vignette bien au-delà de 56 px. Marge fixe ici ; .card devant pour l'emporter quel que soit l'ordre des CSS. */
 .card .poster {
   flex: none;
   width: 56px;

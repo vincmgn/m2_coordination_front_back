@@ -1,8 +1,5 @@
 name: "movies-api-loadtest : tests de charge k6"
 
-# CI rapide (~2 min 30) à chaque push touchant movies-api-loadtest/ : build, vérification des types,
-# seuils anti-régression (débit maximal, 10 s par route) et paliers courts, sur une base MongoDB jetable.
-# Le bilan complet (progressif, rupture, paliers longs) est dans movies-bilan-charge.yml.
 on:
   push:
     paths:
@@ -13,14 +10,12 @@ on:
 permissions:
   contents: read
 
-# Un nouveau push sur la même branche annule la vérification en cours.
 concurrency:
   group: movies-load-test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   load-test:
-    # Version figée : même machine d'un run à l'autre, donc résultats comparables.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
 
@@ -70,13 +65,11 @@ jobs:
           cat server.log
           exit 1
 
-      # continue-on-error : un seuil dépassé ne doit pas empêcher l'enregistrement des rapports.
       - name: Seuils anti-régression (débit maximal, 10 s par route)
         id: max
         continue-on-error: true
         run: npm run -s load:max -- --quiet -e SECONDS=10 2>&1 | tee k6-max.txt
 
-      # Le premier palier en échec est le résultat attendu ; seule une erreur technique fait échouer l'étape.
       - name: Paliers courts (5 → 800 utilisateurs virtuels, 10 s chacun)
         id: paliers
         continue-on-error: true
@@ -111,14 +104,12 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      # Le job échoue si un seuil anti-régression casse ou si les paliers plantent, une fois les rapports enregistrés.
       - name: Verdict
         if: steps.max.outcome == 'failure' || steps.paliers.outcome == 'failure'
         run: |
           echo "::error::Régression de performance ou erreur technique pendant les tests (voir le résumé et les rapports)."
           exit 1
 
-  # Baromètre W/L : historique des derniers runs, affiché dans le résumé (lecture seule de l'historique Actions).
   barometre:
     needs: load-test
     if: always()
@@ -144,6 +135,5 @@ jobs:
           CURRENT_CONCLUSION: ${{ needs.load-test.result }}
           CURRENT_TITLE: ${{ github.event.head_commit.message || github.event_name }}
         run: |
-          # github.workflow_ref = owner/repo/.github/workflows/<fichier>@ref : on garde le nom du fichier.
           WORKFLOW_FILE=$(basename "${WORKFLOW_FILE%@*}")
           node movies-api-loadtest/scripts/barometre.mjs | tee -a "$GITHUB_STEP_SUMMARY"

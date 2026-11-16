@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Défi : la liste posée sur une carte Leaflet. La carte est un plus : la liste reste lisible sans elle.
-// Tuiles OpenStreetMap : attribution visible, aucun préchargement (politique d'usage de l'OSMF).
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -14,16 +12,14 @@ let layer: L.LayerGroup | null = null
 
 function label(text: string) {
   const div = document.createElement('div')
-  div.textContent = text // texte, jamais du HTML venu de l'API
+  div.textContent = text
   return div
 }
 
 function draw() {
   if (!map || !layer) return
   layer.clearLayers()
-  // Cadrer d'abord : un cercle n'a de bornes qu'une fois la carte dotée d'une vue.
   map.fitBounds(L.latLng(props.center.lat, props.center.lon).toBounds(props.radiusKm * 2000), { padding: [12, 12] })
-  // Leaflet attend [lat, lng] : l'inverse de GeoJSON.
   L.circle([props.center.lat, props.center.lon], { radius: props.radiusKm * 1000, color: '#ffb547', weight: 2, fillOpacity: 0.06 }).addTo(layer)
   L.circleMarker([props.center.lat, props.center.lon], { radius: 5, color: '#0d0d11', fillColor: '#f3f1ec', fillOpacity: 1 })
     .bindTooltip('Centre de la recherche')
@@ -40,7 +36,6 @@ onMounted(() => {
   map = L.map(el.value!, { scrollWheelZoom: false })
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map)
   layer = L.layerGroup().addTo(map)
   draw()
@@ -57,7 +52,8 @@ onBeforeUnmount(() => {
   <figure class="map">
     <div ref="el" class="canvas"></div>
     <figcaption class="muted">
-      Carte : {{ items.length }} cinéma{{ items.length > 1 ? 's' : '' }} de cette page dans un cercle de {{ radiusKm }} km. La liste
+      Carte : {{ items.length }} cinéma{{ items.length > 1 ? 's' : '' }} de cette page dans un cercle de {{ radiusKm }}
+      km. La liste
       ci-dessous donne les mêmes informations.
     </figcaption>
   </figure>

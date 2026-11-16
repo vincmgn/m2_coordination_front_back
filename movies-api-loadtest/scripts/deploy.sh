@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Déploie une version de l'API sans toucher aux données, avec contrôle k6 et rollback automatique.
-# Usage : scripts/deploy.sh <version> [options docker build]
-#   ex. : scripts/deploy.sh v2
-#         scripts/deploy.sh v2-lente --build-arg ARTIFICIAL_DELAY_MS=800   (version volontairement défectueuse)
-# Code de sortie : 0 = version déployée, 1 = déploiement refusé (rollback effectué si possible).
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source scripts/deploy-lib.sh

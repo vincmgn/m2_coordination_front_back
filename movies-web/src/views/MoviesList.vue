@@ -1,10 +1,4 @@
 <script setup lang="ts">
-// Page d'accueil : une seule barre de recherche.
-//   barre vide          → liste paginée de tous les films
-//   2 caractères ou +   → recherche réactive par titre, genre ou année (cours « recherche réactive ») :
-//     1. AVANT L'ENVOI    debounce : la requête ne part qu'après 300 ms sans nouvelle frappe
-//     2. PENDANT L'ATTENTE abort : l'appel précédent est annulé (AbortController) à chaque nouvelle saisie
-//     3. AVANT L'AFFICHAGE génération : seule la réponse de la recherche actuelle peut modifier l'écran
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { listMovies, searchMovies, type MovieSummary, type Paginated, type SearchItem } from '@/api'
@@ -19,25 +13,20 @@ const route = useRoute()
 const router = useRouter()
 const str = (value: unknown) => (typeof value === 'string' ? value : '')
 
-// --- Recherche réactive --------------------------------------------------------------------------
-
 type State = 'idle' | 'invalid' | 'waiting' | 'loading' | 'success' | 'empty' | 'error'
 
-// Le texte est aussi gardé dans l'URL (?q=…) : partageable, et retrouvé au retour arrière.
 const query = ref(str(route.query.q))
 const results = ref<SearchItem[]>([])
-const displayedQuery = ref('') // texte réellement recherché par l'API (champ query de la réponse)
+const displayedQuery = ref('')
 const state = ref<State>('idle')
 const error = ref('')
 const searching = computed(() => query.value.trim().length > 0)
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let controller: AbortController | undefined
-let generation = 0 // numéro de la dernière intention de recherche
+let generation = 0
 let stopped = false
 
-// Appelée à chaque changement du champ (et par « Réessayer ») : invalide l'ancien travail tout de suite,
-// puis programme le nouveau. Le numéro augmente même si la saisie devient vide ou trop courte.
 function plan(value: string) {
   const id = ++generation
   clearTimeout(timer)
@@ -65,24 +54,20 @@ async function search(term: string, id: number) {
   controller = ownController
   state.value = 'loading'
   try {
-    const data = await searchMovies(term, ownController.signal) // lève une erreur si la réponse n'est pas ok
-    // Contrôle après la dernière attente, avant de toucher à l'écran.
+    const data = await searchMovies(term, ownController.signal)
     if (stopped || id !== generation) return
     results.value = data.items
     displayedQuery.value = data.query
     state.value = data.items.length ? 'success' : 'empty'
   } catch (e) {
-    // Ancienne recherche, page quittée ou annulation volontaire : rien à afficher.
     if (stopped || id !== generation || (e as Error).name === 'AbortError') return
     error.value = `Recherche impossible. ${(e as Error).message}`
     state.value = 'error'
   }
 }
 
-// flush 'sync' : plan est appelé à chaque modification, sans attendre le rendu suivant.
 watch(query, plan, { flush: 'sync' })
-if (query.value) plan(query.value) // arrivée avec ?q=… dans l'URL
-// L'URL change sans passer par le champ (clic sur le logo, retour arrière) : on resynchronise le champ.
+if (query.value) plan(query.value)
 watch(
   () => route.query.q,
   (q) => {
@@ -90,7 +75,6 @@ watch(
   },
 )
 
-// Quitter la page : invalider, arrêter le minuteur et abandonner la requête en cours.
 onUnmounted(() => {
   stopped = true
   ++generation
@@ -122,8 +106,6 @@ const statusText = computed(() => {
 })
 
 const toSummary = ({ id, ...rest }: SearchItem): MovieSummary => ({ _id: id, ...rest })
-
-// --- Liste paginée (barre vide) ------------------------------------------------------------------
 
 const page = computed(() => Number(route.query.page) || 1)
 const list = ref<Paginated<MovieSummary> | null>(null)
@@ -172,11 +154,9 @@ watch(
     </div>
   </section>
 
-  <!-- Recherche réactive -->
   <template v-if="searching">
     <div class="status-row">
       <p id="search-status" class="status" :class="state" role="status" aria-live="polite">{{ statusText }}</p>
-      <!-- Réessayer passe par la même planification que la saisie. -->
       <button v-if="state === 'error'" type="button" class="btn" @click="plan(query)">Réessayer</button>
     </div>
     <div class="grid" :aria-busy="state === 'loading'">
@@ -184,7 +164,6 @@ watch(
     </div>
   </template>
 
-  <!-- Liste paginée -->
   <template v-else>
     <p v-if="listError" class="error">Impossible de charger les films : {{ listError }}</p>
 

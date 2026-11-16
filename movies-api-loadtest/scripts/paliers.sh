@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Lance load-tests/paliers.ts palier par palier (charge croissante) et s'arrête au premier palier qui échoue.
-# Tableau récapitulatif affiché et enregistré dans load-tests/reports/paliers.md.
-# Variables : PALIERS="5 10 20" (utilisateurs virtuels), DURATION=30s ; arguments supplémentaires passés à k6.
-# Codes de sortie : 0 = tableau produit (dépassement trouvé ou non), autre = problème technique.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 REPORTS=load-tests/reports
@@ -17,7 +13,6 @@ for vus in $PALIERS; do
     load-tests/paliers.ts > "$REPORTS/palier-$vus.txt" 2>&1
   code=$?
   done_paliers+=("$vus")
-  # 0 = seuils respectés, 99 = seuil dépassé ; tout le reste (API injoignable, script cassé…) est technique.
   if [[ $code -eq 99 ]]; then
     break
   elif [[ $code -ne 0 ]]; then

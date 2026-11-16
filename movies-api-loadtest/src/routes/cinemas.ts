@@ -1,5 +1,3 @@
-// GET /cinemas : annuaire des cinémas, et recherche « autour de » (TP Géolocalisation, contrat dans GEOLOC.md §1).
-// La position reçue sert à cette requête, puis on l'oublie : ni journal, ni stockage, ni renvoi dans la réponse.
 import { Router } from "express";
 import type { Collection } from "mongodb";
 import { getDB } from "../db.js";
@@ -14,7 +12,6 @@ export interface CinemasDeps {
   finder: NearbyFinder;
 }
 
-/** Ce que voit le front : la position du CINÉMA (publique) et, en recherche « autour de », la distance arrondie. */
 const view = (c: Cinema, distanceKm: number | null = null) => ({
   slug: c.slug,
   name: c.name,
@@ -36,7 +33,6 @@ export function cinemasRouter(deps: CinemasDeps) {
       res.json({ page: q.page, limit: q.limit, total, data: items.map((n) => view(n.cinema, n.distanceKm)) });
       return;
     }
-    // Sans position : tout l'annuaire, par nom (même forme de page que GET /movies).
     const page = Number(raw.page ?? 1);
     const limit = Number(raw.limit ?? DEFAULT_LIMIT);
     if (!Number.isInteger(page) || !Number.isInteger(limit) || page < 1 || limit < 1 || limit > MAX_LIMIT) {
@@ -54,7 +50,6 @@ export function cinemasRouter(deps: CinemasDeps) {
 
 export const cinemas = () => getDB().collection<Cinema>("cinemas");
 
-/** GEO_FINDER=geonear : défi, $geoNear sur l'index 2dsphere. Par défaut : boîte englobante + haversine. */
 export const defaultFinder = (): NearbyFinder => (process.env.GEO_FINDER === "geonear" ? geoNearFinder(cinemas) : boxFinder(cinemas));
 
 export default cinemasRouter({ cinemas, finder: defaultFinder() });

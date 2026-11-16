@@ -2,18 +2,14 @@
 import { computed, ref, watch } from 'vue'
 import { posterColor } from '@/posterColor'
 
-// decorative : le titre est déjà écrit à côté (carte, liste) ; l'affiche est alors ignorée par les lecteurs d'écran
-// pour ne pas annoncer le titre deux fois.
 const props = defineProps<{ src?: string; title: string; decorative?: boolean }>()
 
-// Beaucoup d'affiches du dataset ne répondent plus : on affiche alors un emplacement neutre.
 const broken = ref(false)
 watch(
   () => props.src,
   () => (broken.value = false),
 )
 
-// Couleur stable par titre (même calcul que le billet PDF de l'API).
 const color = computed(() => posterColor(props.title))
 </script>
 

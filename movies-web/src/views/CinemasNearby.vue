@@ -1,13 +1,9 @@
 <script setup lang="ts">
-// « Cinémas autour de moi » : sans centre, l'annuaire par nom ; avec un centre (position ou adresse),
-// les cinémas à moins de 5 km, triés par le back sur la distance exacte. Le front ne trie rien.
-// Le centre reste en mémoire : ni localStorage, ni URL de la page (contrairement à ?q= de la recherche de films).
 import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { FEATURE_LABELS, listCinemas, type Cinema } from '@/api'
 import NearbyBar from '@/components/NearbyBar.vue'
 import { formatDistance, nearbyParams, type SearchCenter } from '@/geo'
 
-// Leaflet n'est chargé qu'à l'affichage de la première carte.
 const NearbyMap = defineAsyncComponent(() => import('@/components/NearbyMap.vue'))
 const RADIUS_KM = 5
 const LIMIT = 6
@@ -35,7 +31,7 @@ async function load() {
     cinemas.value = result.data
     total.value = result.total
   } catch (e) {
-    if (id === generation) error.value = (e as Error).message // refus du back affiché tel quel
+    if (id === generation) error.value = (e as Error).message
   } finally {
     if (id === generation) loading.value = false
   }

@@ -1,4 +1,3 @@
-// Défenses transverses : en-têtes, CSRF, taille et type du corps, limites de fréquence, jetons d'annulation, nettoyage.
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
@@ -85,7 +84,7 @@ describe("limite de fréquence", () => {
     for (let i = 0; i < 3; i++) assert.equal(l.take("ip-a", t0 + i), 0);
     assert.equal(l.take("ip-a", t0 + 10), 60);
     assert.equal(l.take("ip-b", t0 + 10), 0);
-    assert.equal(l.take("ip-a", t0 + 60_001), 0); // la fenêtre a glissé
+    assert.equal(l.take("ip-a", t0 + 60_001), 0);
   });
 });
 

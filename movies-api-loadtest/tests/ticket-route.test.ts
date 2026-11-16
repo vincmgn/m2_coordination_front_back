@@ -1,4 +1,3 @@
-// Contrat HTTP du billet : en-têtes et codes, sur un vrai serveur Express (port libre) avec un faux stockage.
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
@@ -25,7 +24,6 @@ let close = () => {};
 
 before(async () => {
   const app = express();
-  // Session simulée : en-tête X-Test-User, 401 sans lui (comme requireUser).
   app.use(
     "/screenings",
     ticketsRouter({
@@ -38,7 +36,6 @@ before(async () => {
       },
     }),
   );
-  // Même forme d'erreur que src/index.ts : { error }.
   app.use((err: HttpError, _req: Request, res: Response, _next: NextFunction) => res.status(err.status ?? 500).json({ error: err.message }));
   const server = app.listen(0);
   await new Promise((ok) => server.once("listening", ok));
@@ -86,7 +83,6 @@ describe("GET /screenings/mine/:bookingId/ticket.pdf", () => {
     assert.deepEqual(await cancelled.json(), { error: "Cette réservation a été annulée : elle n'a plus de billet." });
   });
 
-  // Limite du test : 6 par minute et par compte. Un compte neuf, pour ne pas dépendre des tests précédents.
   it("429 au-delà de la limite par compte, avec Retry-After ; les autres comptes ne sont pas gênés", async () => {
     const busy = "65000000000000000000000c";
     for (let i = 0; i < 6; i++) assert.equal((await get(`/${BOOKING}/ticket.pdf`, busy)).status, 404);

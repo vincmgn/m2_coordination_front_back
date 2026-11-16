@@ -1,10 +1,8 @@
-# Front Vue : build avec Node, puis fichiers statiques servis par nginx (qui relaie aussi /api vers l'API).
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# Commit du build : devient service.version dans les traces du navigateur.
 ARG GIT_SHA=local
 ENV VITE_GIT_SHA=${GIT_SHA}
 RUN npm run build

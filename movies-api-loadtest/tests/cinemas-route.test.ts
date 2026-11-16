@@ -1,5 +1,3 @@
-// Contrat HTTP de GET /cinemas?lat=…&lon=… sur un vrai serveur Express (port libre), sans base :
-// le faux stockage renvoie « la boîte », le vrai boxFinder mesure et trie.
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
@@ -14,14 +12,13 @@ const cinema = (slug: string, name: string, latitude: number, longitude: number)
   location: { type: "Point", coordinates: [longitude, latitude] },
 });
 
-// Ce que MongoDB renverrait pour la boîte de 5 km autour de Bellecour, dans le désordre.
 const BOX = [
-  cinema("vidal", "Ciné Gratte-Ciel", 45.765944, 4.879525), // 3,8 km
-  cinema("charite", "Ciné Charité", 45.755824, 4.832967), // 0,2 km
-  cinema("zoe", "Égal Zoé", 45.767449, 4.833417), // 1,1 km, ex aequo
-  cinema("coin", "Le Coin", 45.7976, 4.8897), // dans la boîte, à 6,3 km : hors du cercle
-  cinema("anne", "Égal Anne", 45.767449, 4.833417), // 1,1 km, ex aequo
-  cinema("lafayette", "Le Lafayette", 45.763688, 4.844596), // 1,2 km
+  cinema("vidal", "Ciné Gratte-Ciel", 45.765944, 4.879525),
+  cinema("charite", "Ciné Charité", 45.755824, 4.832967),
+  cinema("zoe", "Égal Zoé", 45.767449, 4.833417),
+  cinema("coin", "Le Coin", 45.7976, 4.8897),
+  cinema("anne", "Égal Anne", 45.767449, 4.833417),
+  cinema("lafayette", "Le Lafayette", 45.763688, 4.844596),
 ];
 
 const filters: unknown[] = [];
@@ -57,7 +54,7 @@ describe("GET /cinemas autour de Bellecour", () => {
   it("écarte le coin de la boîte et trie sur la distance exacte", async () => {
     const { status, body } = await get(`${BELLECOUR}&radiusKm=5`);
     assert.equal(status, 200);
-    assert.equal(body.total, 5); // le coin est exclu
+    assert.equal(body.total, 5);
     assert.equal(body.data[0].name, "Ciné Charité");
     assert.equal(body.data[0].distanceKm, 0.2);
     assert.ok(body.data.every((c) => c.distanceKm <= 5));

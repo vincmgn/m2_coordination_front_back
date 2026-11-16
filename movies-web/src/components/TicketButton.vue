@@ -2,14 +2,13 @@
 import { ref } from 'vue'
 import { FALLBACK, openTicket, realBrowser, saveTicket, TicketError } from '@/ticket'
 
-// Trois états : prêt (le libellé annonce le PDF), en préparation (désactivé, aria-busy), en erreur (phrase, role="alert").
 const props = defineProps<{ bookingId: string }>()
 
 const loading = ref<'open' | 'save' | null>(null)
 const error = ref('')
 
 async function run(save: boolean) {
-  if (loading.value) return // pas de double clic
+  if (loading.value) return
   loading.value = save ? 'save' : 'open'
   error.value = ''
   try {

@@ -1,5 +1,3 @@
-// Confirmation par SMS via le prestataire externe (passerelle simulée en local, cf. sms-passerelle/).
-// Sans SMS_GATEWAY_URL, aucun SMS n'est envoyé. Le numéro part dans le corps de la requête, jamais dans la trace.
 const GATEWAY = process.env.SMS_GATEWAY_URL;
 
 export type SmsStatus = "SENT" | "FAILED";

@@ -1,6 +1,3 @@
-// Interprète un lancement k6 : statut (ok / seuil / technique), mesures, seuils et contexte du run.
-// Écrit result.json (lu ensuite pour le suivi des tickets) et affiche un résumé Markdown.
-// Usage : node scripts/perf-result.mjs <summary.json> <code de sortie k6 | vide si k6 n'a pas tourné> <result.json>
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const [summaryPath, exitCodeArg, outputPath] = process.argv.slice(2);
@@ -26,7 +23,6 @@ function readSummary() {
 const exitCode = exitCodeArg === "" || exitCodeArg === undefined ? null : Number(exitCodeArg);
 const { metrics, error } = readSummary();
 
-// Seuils attendus et seuils dépassés (dans l'export k6, true = seuil dépassé).
 const thresholds = [];
 for (const [metric, label] of Object.entries(THRESHOLD_METRICS)) {
   for (const [threshold, crossed] of Object.entries(metrics?.[metric]?.thresholds ?? {})) {
@@ -34,8 +30,6 @@ for (const [metric, label] of Object.entries(THRESHOLD_METRICS)) {
   }
 }
 
-// 0 = seuils respectés, 99 = seuil dépassé. Tout le reste (k6 absent, API injoignable, script cassé)
-// ou un résumé inexploitable ne permet pas de conclure sur les performances.
 let status;
 let reason;
 if (exitCode === null) [status, reason] = ["technique", "k6 n'a pas été lancé (API non disponible ?)"];

@@ -34,12 +34,10 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 })
 
-// Pages réservées aux comptes connectés : sinon, détour par la connexion puis retour à la page demandée.
 router.beforeEach(async (to) => {
   const { user, load } = useAuth()
   await load()
   if ((to.meta.requiresAuth || to.meta.requiresAdmin) && !user.value) return { name: 'login', query: { redirect: to.fullPath } }
-  // Confort seulement : la vraie barrière est le back (403 pour un compte ordinaire).
   if (to.meta.requiresAdmin && !user.value?.admin) return { name: 'movies' }
 })
 

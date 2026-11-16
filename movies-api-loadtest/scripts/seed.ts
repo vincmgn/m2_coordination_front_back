@@ -1,20 +1,15 @@
-// Remplit une base MongoDB LOCALE avec des films factices au format sample_mflix (utilisé par la CI).
-// Lancement : MONGODB_URI=mongodb://localhost:27017 npm run seed
-// Volontairement sans dotenv : le .env (Atlas) n'est jamais lu ici.
 import { MongoClient } from "mongodb";
 
-const COUNT = 21349; // même volume que sample_mflix.movies
+const COUNT = 21349;
 const uri = process.env.MONGODB_URI ?? "";
 const dbName = process.env.MONGODB_DB || "sample_mflix";
 
-// Le script vide la collection : on refuse tout ce qui n'est pas une base locale.
 const host = uri.match(/^mongodb:\/\/(?:[^@/]*@)?([^:/?]+)/)?.[1];
 if (!host || !["localhost", "127.0.0.1"].includes(host)) {
   console.error("Refusé : le seed ne s'exécute que sur une base locale (mongodb://localhost:...).");
   process.exit(1);
 }
 
-// Générateur pseudo-aléatoire à graine fixe : mêmes données à chaque exécution, donc runs comparables.
 let state = 42;
 const random = () => ((state = (state * 1664525 + 1013904223) % 2 ** 32) / 2 ** 32);
 const pick = <T>(list: T[]): T => list[Math.floor(random() * list.length)];

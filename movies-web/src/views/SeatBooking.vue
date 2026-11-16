@@ -35,29 +35,23 @@ const screening = ref<ScreeningDetail | null>(null)
 const error = ref<string | null>(null)
 const taken = ref(new Set<string>())
 const selected = ref(new Set<string>())
-const justTaken = ref(new Set<string>()) // sièges réservés à l'instant par quelqu'un d'autre (animation)
+const justTaken = ref(new Set<string>())
 const viewers = ref(0)
 const live = ref<'connexion' | 'en direct' | 'interrompu'>('connexion')
 const notice = ref<string | null>(null)
-// Coordonnées pré-remplies avec le brouillon gardé dans le navigateur (voir bookingDraft.ts).
-// Connecté sans brouillon : nom et e-mail repris du compte (la réservation ira dans « Mes séances »).
 const { user } = useAuth()
 const draft = loadContact()
 const name = ref(draft?.name ?? user.value?.name ?? '')
 const email = ref(draft?.email ?? user.value?.email ?? '')
 const phone = ref(draft?.phone ?? '')
-// Même règle que l'API : 8 à 15 chiffres une fois espaces, points, tirets et parenthèses retirés.
 const phoneValid = computed(() => /^\+?\d{8,15}$/.test(phone.value.replace(/[\s.()-]/g, '')))
 const contactValid = computed(() => !!name.value.trim() && !!email.value.trim() && phoneValid.value)
 const booking = ref<Booking | null>(null)
 const saving = ref(false)
-// Réservation en attente : cliquée pendant une panne, renvoyée automatiquement au retour de l'API.
 const queued = ref<PendingBooking | null>(null)
 
-// Brouillon : chaque saisie est gardée, pour ne rien perdre si l'API est hors ligne ou la page rechargée.
 watch([name, email, phone], ([n, e, p]) => saveContact({ name: n, email: e, phone: p }))
 watch(selected, (seats) => screening.value && !booking.value && saveSeats(screening.value.id, [...seats]))
-// Sélection restaurée dès que la séance est lue (au chargement ou au retour de l'API), sans les sièges pris entre-temps.
 watch(
   () => screening.value?.id,
   (id) => {
@@ -67,7 +61,6 @@ watch(
   },
 )
 
-// Test A/B bouton_reserver_v1 : seul le texte du bouton change (voir movies-api-loadtest/src/routes/ab.ts).
 const { variant, counted } = useExperiment()
 const cta = ref<HTMLButtonElement | null>(null)
 const ctaLabel = computed(() => {
@@ -98,7 +91,6 @@ async function reload() {
       error.value = null
     }
   } catch (e) {
-    // API hors ligne (5xx du proxy) ou pas de réseau : message clair, le brouillon reste gardé.
     const offline = !(e instanceof ApiError) || e.status >= 500
     notice.value = offline
       ? 'Service indisponible, vos informations sont gardées.'
@@ -150,9 +142,6 @@ function connect(id: string) {
   source.addEventListener('viewers', (e) => (viewers.value = JSON.parse(e.data).count))
   source.onerror = () => {
     live.value = 'interrompu'
-    // Pas de close() ici : après une coupure, EventSource se reconnecte tout seul puis reçoit un nouveau ready.
-    // Exception : si la reconnexion obtient une réponse qui n'est pas un flux (ex. 502 du proxy pendant que
-    // l'API est arrêtée), le navigateur abandonne définitivement (readyState CLOSED). On recrée alors le flux.
     if (source?.readyState === EventSource.CLOSED) {
       clearTimeout(reconnectTimer)
       reconnectTimer = setTimeout(() => connect(id), RECONNECT_MS)
@@ -168,19 +157,16 @@ watch(
     booking.value = null
     notice.value = null
     taken.value = new Set()
-    // Réservation restée en attente (page rechargée pendant la panne) : sièges réaffichés, renvoi au prochain ready.
     queued.value = loadPending(id)
     selected.value = new Set(queued.value?.seats)
     try {
       screening.value = await getScreening(id)
       taken.value = new Set(screening.value.taken)
     } catch (e) {
-      // Séance inexistante ou invalide (4xx) : erreur définitive.
       if (e instanceof ApiError && e.status < 500) {
         error.value = e.message
         return
       }
-      // Serveur indisponible : le flux se connectera dès son retour, et son ready déclenchera la lecture.
       error.value = 'Serveur indisponible : nouvelle tentative automatique…'
     }
     connect(id)
@@ -190,8 +176,6 @@ watch(
 
 if (FALLBACK_RELOAD_MS > 0) timer = setInterval(() => screening.value && reload(), FALLBACK_RELOAD_MS)
 
-// Démontage : fermer le flux, arrêter le minuteur et empêcher toute relecture de modifier l'écran.
-// Retour du réseau côté navigateur : renvoi immédiat, sans attendre la reconnexion du flux.
 window.addEventListener('online', flushQueued)
 
 onBeforeUnmount(() => {
@@ -202,7 +186,6 @@ onBeforeUnmount(() => {
   clearTimeout(reconnectTimer)
 })
 
-// --- Sélection et réservation ----------------------------------------------------------------------
 function toggle(seat: string) {
   if (taken.value.has(seat) || booking.value || queued.value) return
   notice.value = null
@@ -218,8 +201,6 @@ const sortedSelection = computed(() =>
 )
 const available = computed(() => (screening.value ? screening.value.room.capacity - taken.value.size : 0))
 
-// Exposition : le bouton est rendu (après la mise à jour du DOM), il reste au moins une place libre,
-// et il est visible à l'écran. Rien en mode de secours (counted = false).
 watch(
   [cta, counted, () => available.value > 0],
   ([el, isCounted, anyFree], _old, onCleanup) => {
@@ -228,7 +209,6 @@ watch(
   { flush: 'post' },
 )
 
-// Seule la réponse du POST confirme une réservation personnelle ; le flux SSE ne fait qu'informer.
 async function reserve() {
   if (!screening.value || !selected.value.size || !contactValid.value) return
   await send({
@@ -239,11 +219,7 @@ async function reserve() {
   })
 }
 
-// Envoi d'une réservation (premier clic ou renvoi d'une réservation en attente).
-// API injoignable (5xx, réseau, réponse perdue) : la demande est mise en attente et renvoyée à la reconnexion.
-// Le requestId reste le même : si l'API l'avait déjà enregistrée, elle renvoie la réservation existante.
 async function send(request: PendingBooking) {
-  // props.id plutôt que screening : au retour de l'API, le renvoi peut partir avant la relecture de la séance.
   if (saving.value) return
   const id = props.id
   saving.value = true
@@ -279,7 +255,6 @@ async function send(request: PendingBooking) {
   }
 }
 
-// Renvoi de la réservation en attente : appelé à chaque reconnexion (ready du flux SSE, retour du réseau).
 function flushQueued() {
   if (queued.value) send(queued.value)
 }
@@ -408,7 +383,6 @@ const formatDate = (date: string) =>
             Numéro invalide : 8 à 15 chiffres, ex. 06 12 34 56 78
           </small>
         </label>
-        <!-- Squelette de la taille du bouton tant que la variante est inconnue : jamais de « Réserver » provisoire. -->
         <div v-if="variant === null" class="btn btn-skeleton" aria-busy="true">&nbsp;</div>
         <button
           v-else
@@ -495,7 +469,6 @@ h1 {
   border-radius: calc(var(--radius) + 4px);
 }
 
-/* L'écran éclaire la salle : barre ambre et halo vers les sièges. */
 .screen {
   width: 70%;
   max-width: 420px;

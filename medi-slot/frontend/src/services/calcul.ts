@@ -1,4 +1,3 @@
-// Calcul arithmétique (+ - * / et parenthèses) sans eval : rien d'autre n'est exécuté.
 export function calculer(expression: string): number {
   const jetons = expression.match(/\d+(?:\.\d+)?|[-+*/()]|\S/g) ?? [];
   let i = 0;

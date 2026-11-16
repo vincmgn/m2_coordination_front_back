@@ -1,5 +1,3 @@
-// Table de référence partagée avec l'API (movies-api-loadtest/tests/ticket-service.test.ts) :
-// si l'une des deux couleurs change, les deux tests doivent être mis à jour ensemble.
 import { describe, expect, it } from 'vitest'
 import { posterColor } from './posterColor'
 

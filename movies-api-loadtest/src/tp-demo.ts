@@ -1,6 +1,3 @@
-// TP OpenTelemetry : compte de démonstration avec beaucoup de réservations, créé au premier démarrage (TP_TICKETS=1).
-// spectateur@movies.test / Movies-demo-2026! (Camille Dupont, données fictives).
-// 24 réservations sur 24 films, passées et à venir ; trois d'entre elles ont un SMS refusé par l'opérateur.
 import { ObjectId } from "mongodb";
 import { getDB } from "./db.js";
 import { hashPassword } from "./routes/auth.js";
@@ -9,7 +6,7 @@ import { TP_TICKETS } from "./tp.js";
 export const DEMO_EMAIL = "spectateur@movies.test";
 const DEMO_PASSWORD = "Movies-demo-2026!";
 const BOOKINGS = 24;
-const SMS_REFUSED = new Set([4, 11, 19]); // indices des réservations dont le SMS a échoué
+const SMS_REFUSED = new Set([4, 11, 19]);
 const TIMES = ["1400", "1730", "2100"];
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10).replaceAll("-", "");
@@ -33,7 +30,7 @@ export async function seedTpDemo() {
     .toArray();
 
   const rows = films.flatMap((film, i) => {
-    const day = new Date(Date.now() + (i - 20) * 86_400_000); // 20 séances passées, 4 à venir
+    const day = new Date(Date.now() + (i - 20) * 86_400_000);
     const screeningId = `${String(film._id)}-${ymd(day)}-${TIMES[i % TIMES.length]}`;
     const bookingId = new ObjectId();
     const createdAt = new Date(day.getTime() - 3 * 86_400_000);

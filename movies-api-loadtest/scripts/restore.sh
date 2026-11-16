@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Restauration de la base depuis une sauvegarde (dernier recours, si une version a abîmé les DONNÉES).
-# ⚠️ Remplace le contenu actuel : tout ce qui a été écrit depuis la sauvegarde est perdu.
-#    Une sauvegarde de l'état actuel est faite juste avant, pour pouvoir revenir en arrière.
-# Usage : scripts/restore.sh <fichier backups/….archive.gz> [--yes]
 set -uo pipefail
 cd "$(dirname "$0")/.."
 source scripts/deploy-lib.sh

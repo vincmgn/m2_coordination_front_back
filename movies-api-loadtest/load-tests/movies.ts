@@ -1,5 +1,3 @@
-// Test de montée en charge, lecture seule (aucune écriture sur la base Atlas).
-// Lancement : npm run load  (BASE_URL modifiable : npm run load -- -e BASE_URL=http://...)
 import http from "k6/http";
 import { check, sleep } from "k6";
 import type { Options } from "k6/options";
@@ -16,7 +14,6 @@ export const options: Options = {
   thresholds: {
     http_req_failed: ["rate<0.01"],
     http_req_duration: ["p(95)<800"],
-    // Sans seuil : sert juste à afficher le détail par type de requête dans le résumé.
     "http_req_duration{name:liste}": [],
     "http_req_duration{name:titre}": [],
     "http_req_duration{name:genre+année}": [],
@@ -27,7 +24,6 @@ export const options: Options = {
 const TITLES = ["star", "love", "night", "man", "war"];
 const GENRES = ["Drama", "Comedy", "Action", "Western", "Horror"];
 
-// Récupère une centaine d'_id réels pour les requêtes GET /movies/:id.
 export function setup(): { ids: string[] } {
   const res = http.get(`${BASE_URL}/movies?limit=100`);
   if (res.status !== 200) throw new Error(`API injoignable sur ${BASE_URL} (status ${res.status})`);

@@ -1,6 +1,3 @@
-// Passerelle SMS simulée (TP OpenTelemetry) : un prestataire externe, lent, qui refuse certains numéros.
-// POST /sms { to, text } → 202 après SMS_DELAY_MS ; numéro finissant par « 13 » → 503 (opérateur indisponible).
-// Aucune dépendance : node:http suffit. Le SMS n'est envoyé nulle part, seul le délai compte.
 import { createServer } from "node:http";
 
 const DELAY_MS = Number(process.env.SMS_DELAY_MS ?? 1200);

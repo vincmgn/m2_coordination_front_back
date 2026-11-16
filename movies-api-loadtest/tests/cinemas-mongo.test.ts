@@ -1,5 +1,3 @@
-// La boîte et $geoNear sur un vrai MongoDB 8 (conteneur movies-db, port 27018), base jetable geo_test_<pid>.
-// Ignoré si MongoDB ne répond pas : MONGO_TEST_URI pour en viser un autre.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { MongoClient, type Collection, type Db } from "mongodb";
