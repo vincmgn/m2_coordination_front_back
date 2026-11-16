@@ -5,6 +5,9 @@ import { MongoBulkWriteError, ObjectId } from "mongodb";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
 import { recordConversion } from "./ab.js";
+import { clientIp, rateLimiter } from "../rate-limit.js";
+import { cancelToken, checkCancelToken } from "../secret.js";
+import { cleanText } from "../security.js";
 import { currentUser, requireUser } from "./auth.js";
 import { sendSms, type SmsStatus } from "../sms.js";
 import { TP_TICKETS } from "../tp.js";
@@ -68,8 +71,19 @@ export async function ensureScreeningIndexes() {
 async function findByRequest(screeningId: string, requestId: string) {
   const rows = await reservations().find({ screeningId, requestId }).toArray();
   if (!rows.length) return null;
-  return { bookingId: rows[0]!.bookingId, screeningId, seats: rows.map((r) => r.seat), name: rows[0]!.name };
+  const bookingId = rows[0]!.bookingId;
+  return { bookingId, screeningId, seats: rows.map((r) => r.seat), name: rows[0]!.name, ...anonymousToken(bookingId, rows[0]!.userId) };
 }
+
+// Réservation faite sans compte : seul celui qui a réservé reçoit ce jeton, exigé pour l'annuler.
+const anonymousToken = (bookingId: ObjectId, userId?: ObjectId) => (userId ? {} : { cancelToken: cancelToken(bookingId.toHexString()) });
+
+// Abus : réservations (sièges bloqués, SMS envoyés à n'importe quel numéro) et connexions SSE, par IP.
+const reserveByIp = rateLimiter({ max: 20, windowMs: 10 * 60_000 });
+const smsByPhone = rateLimiter({ max: 3, windowMs: 60 * 60_000 }); // au-delà : réservation acceptée, SMS non envoyé
+const cancelByIp = rateLimiter({ max: 30, windowMs: 10 * 60_000 });
+const MAX_STREAMS_PER_IP = 10;
+const streamsByIp = new Map<string, number>();
 
 // --- Séances calculées -------------------------------------------------------------------------
 
@@ -284,6 +298,12 @@ router.get("/:id", async (req, res) => {
 router.get("/:id/events", async (req, res) => {
   const screening = await findScreening(req.params.id);
   const id = screening.id;
+  const ip = clientIp(req);
+  if ((streamsByIp.get(ip) ?? 0) >= MAX_STREAMS_PER_IP) {
+    res.set("Retry-After", "30");
+    throw new HttpError(429, "Trop de flux ouverts depuis cette adresse");
+  }
+  streamsByIp.set(ip, (streamsByIp.get(ip) ?? 0) + 1);
 
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -306,6 +326,9 @@ router.get("/:id/events", async (req, res) => {
 
   req.on("close", () => {
     clearInterval(heartbeat);
+    const open = (streamsByIp.get(ip) ?? 1) - 1;
+    if (open > 0) streamsByIp.set(ip, open);
+    else streamsByIp.delete(ip);
     bus.off(id, onEvent);
     const count = (viewers.get(id) ?? 1) - 1;
     if (count > 0) viewers.set(id, count);
@@ -316,9 +339,10 @@ router.get("/:id/events", async (req, res) => {
 
 // POST /screenings/:id/reservations { seats: ["C7", "C8"], name: "Alice", email: "alice@example.com", phone: "06 12 34 56 78" }
 router.post("/:id/reservations", async (req, res) => {
+  reserveByIp.check(clientIp(req), res, "Trop de réservations depuis cette adresse. Réessayez plus tard.");
   const screening = await findScreening(req.params.id);
   const seats = parseSeats(req.body?.seats);
-  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const name = typeof req.body?.name === "string" ? cleanText(req.body.name) : "";
   if (!name || name.length > 60) throw new HttpError(400, 'Le champ "name" est requis (60 caractères maximum)');
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'Le champ "email" est requis et doit être valide');
@@ -375,13 +399,14 @@ router.post("/:id/reservations", async (req, res) => {
       publish(screening.id, { type: "seat-updated", screeningId: screening.id, seats, status: "BOOKED" });
 
       // SMS de confirmation : le statut est gardé pour l'historique. Le prestataire est lent (≈ 1 s).
-      const sms = confirmBySms(screening, bookingId, seats, phone);
+      // Un même numéro ne reçoit pas plus de 3 SMS par heure (envoi de SMS en masse vers un tiers, coût).
+      const sms = smsByPhone.take(phone) ? Promise.resolve() : confirmBySms(screening, bookingId, seats, phone);
       if (TP_TICKETS) await sms; // TP OpenTelemetry, ticket T1 : la réponse attend le prestataire SMS.
       else sms.catch((e) => console.error("SMS de confirmation impossible :", e));
 
       // Conversion A/B : après l'écriture réussie, jamais au clic. Une panne de la mesure ne fait pas échouer la réservation.
       await recordConversion(req).catch((e) => console.error("Attribution A/B impossible :", e));
-      res.status(201).json({ bookingId, screeningId: screening.id, seats, name });
+      res.status(201).json({ bookingId, screeningId: screening.id, seats, name, ...anonymousToken(bookingId, userId) });
     } catch (e) {
       span.recordException(e as Error);
       span.setStatus({ code: SpanStatusCode.ERROR });
@@ -398,8 +423,9 @@ async function confirmBySms(screening: Awaited<ReturnType<typeof findScreening>>
 }
 
 // DELETE /screenings/:id/reservations/:bookingId : annule une réservation (libère tous ses sièges).
-// Réservation d'un compte : uniquement par ce compte connecté (404 sinon).
+// Réservation d'un compte : uniquement par ce compte connecté ; sans compte : avec le jeton d'annulation (404 sinon).
 router.delete("/:id/reservations/:bookingId", async (req, res) => {
+  cancelByIp.check(clientIp(req), res);
   const screening = await findScreening(req.params.id);
   if (!/^[0-9a-f]{24}$/i.test(req.params.bookingId)) throw new HttpError(400, "Identifiant de réservation invalide");
   const bookingId = new ObjectId(req.params.bookingId);
@@ -408,9 +434,11 @@ router.delete("/:id/reservations/:bookingId", async (req, res) => {
   if (!seats.length) throw new HttpError(404, "Réservation introuvable");
   // Réservation rattachée à un compte : seul ce compte peut l'annuler. Pour un autre (ou sans session),
   // même réponse qu'une réservation inconnue : un 403 avouerait qu'elle existe.
-  // Réservation faite sans compte : le bookingId, reçu seulement par celui qui a réservé, reste la preuve.
+  // Réservation faite sans compte : le jeton d'annulation (en-tête X-Cancel-Token), reçu seulement par celui qui a
+  // réservé. Le bookingId seul ne suffit pas : un ObjectId est prévisible (heure + compteur).
   const userId = rows[0]!.userId;
-  if (userId && !(await currentUser(req))?._id.equals(userId)) throw new HttpError(404, "Réservation introuvable");
+  const allowed = userId ? !!(await currentUser(req))?._id.equals(userId) : checkCancelToken(bookingId.toHexString(), req.get("X-Cancel-Token"));
+  if (!allowed) throw new HttpError(404, "Réservation introuvable");
   // Garder la trace de l'annulation (billet → 409), puis libérer les sièges.
   if (userId) await cancellations().insertOne({ bookingId, userId, screeningId: screening.id, seats, cancelledAt: new Date() });
   await reservations().deleteMany({ screeningId: screening.id, bookingId });

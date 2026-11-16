@@ -14,6 +14,7 @@ Front Vue 3 + TypeScript + Vite pour l'API [`movies-api-loadtest`](../movies-api
   - Pour l'enregistrement, le fichier porte le nom proposé par le serveur.
   - Chaque erreur (401, 404, 409, 500, hors ligne, réponse qui n'est pas un PDF) devient une phrase, jamais un onglet vide.
   - Contrat et preuves : [`CONVOCATION.md`](../movies-api-loadtest/CONVOCATION.md).
+- **Cinémas autour de moi** (`/cinemas`) : « Autour de moi (5 km) » ou une adresse géocodée par l'IGN (`src/geo.ts`, `components/NearbyBar.vue`), liste triée par l'API, carte Leaflet / OpenStreetMap (`components/NearbyMap.vue`). La position est demandée seulement au clic et arrondie à environ 100 m ; chaque refus devient une phrase. Contrat et preuves : [`GEOLOC.md`](../movies-api-loadtest/GEOLOC.md).
 - **Test A/B du bouton de réservation** : « Réserver » (A) ou « Choisir cette place » (B), seul le texte change. La variante vient de l'API (`composables/useExperiment.ts`, squelette tant qu'elle est inconnue, A hors test en cas d'échec) ; l'exposition part quand le bouton est visible (`composables/trackExposure.ts`). Détails dans le README de l'API.
 
 ## Lancement

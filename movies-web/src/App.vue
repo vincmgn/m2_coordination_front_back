@@ -16,12 +16,13 @@ async function signOut() {
     <div class="container header-inner">
       <RouterLink to="/" class="logo"><span class="lamp" aria-hidden="true" />Movies</RouterLink>
       <nav class="nav">
+        <RouterLink to="/cinemas" class="btn">Cinémas autour de moi</RouterLink>
         <template v-if="user">
           <RouterLink to="/mes-seances" class="btn">Mes séances</RouterLink>
           <button class="btn" :title="user.email" @click="signOut">Déconnexion ({{ user.name }})</button>
         </template>
         <RouterLink v-else to="/connexion" class="btn">Connexion</RouterLink>
-        <RouterLink to="/movies/new" class="btn btn-primary">+ Ajouter un film</RouterLink>
+        <RouterLink v-if="user?.admin" to="/movies/new" class="btn btn-primary">+ Ajouter un film</RouterLink>
       </nav>
     </div>
   </header>

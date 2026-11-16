@@ -2,6 +2,8 @@ import { Router } from "express";
 import { ObjectId, type Filter } from "mongodb";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
+import { cleanText } from "../security.js";
+import { requireAdmin } from "./auth.js";
 import { searchMovies } from "./search.js";
 
 interface Movie {
@@ -30,7 +32,7 @@ const notFound = () => new HttpError(404, "Film introuvable");
 
 function parseId(id: string): ObjectId {
   if (!/^[0-9a-f]{24}$/i.test(id)) {
-    throw new HttpError(400, `Identifiant invalide : "${id}" (24 caractères hexadécimaux attendus)`);
+    throw new HttpError(400, "Identifiant invalide (24 caractères hexadécimaux attendus)");
   }
   return new ObjectId(id);
 }
@@ -38,7 +40,7 @@ function parseId(id: string): ObjectId {
 function parsePositiveInt(value: unknown, name: string): number | undefined {
   if (value === undefined || value === "") return undefined;
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1) {
+  if (!Number.isInteger(n) || n < 1 || n > 1_000_000) {
     throw new HttpError(400, `Le paramètre "${name}" doit être un entier positif`);
   }
   return n;
@@ -49,6 +51,7 @@ function parseStringParam(value: unknown, name: string): string | undefined {
   if (typeof value !== "string") {
     throw new HttpError(400, `Le paramètre "${name}" ne doit être fourni qu'une seule fois`);
   }
+  if (value.length > 100) throw new HttpError(400, `Le paramètre "${name}" est trop long (100 caractères au plus)`);
   return value.trim() || undefined;
 }
 
@@ -56,41 +59,66 @@ const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
+// Champs modifiables par l'API, et rien d'autre : pas de champ inconnu, pas d'opérateur MongoDB ($…), pas de __proto__.
+const FIELDS = ["title", "year", "genres", "plot", "poster"] as const;
+const MAX = { title: 200, plot: 2000, poster: 500, genre: 40, genres: 10 };
+
+function isHttpsUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+// Valide le corps et renvoie un NOUVEL objet ne contenant que les champs autorisés, nettoyés.
 function validateMovie(body: unknown, options: { partial: false }): Movie;
 function validateMovie(body: unknown, options: { partial: true }): Partial<Movie>;
 function validateMovie(body: unknown, { partial }: { partial: boolean }): Partial<Movie> {
   if (!isPlainObject(body)) {
     throw new HttpError(400, "Le corps doit être un objet JSON (header Content-Type: application/json)");
   }
+  const unknown = Object.keys(body).filter((k) => !(FIELDS as readonly string[]).includes(k));
+  if (unknown.length) throw new HttpError(400, `Champs non autorisés : ${unknown.slice(0, 5).map((k) => k.slice(0, 30)).join(", ")}`);
+  if (partial && Object.keys(body).length === 0) throw new HttpError(400, "Aucun champ à modifier");
 
-  const keys = Object.keys(body);
-  if (keys.includes("_id")) {
-    throw new HttpError(400, 'Le champ "_id" est géré par la base et ne peut pas être fourni');
-  }
-  if (keys.some((k) => k.startsWith("$"))) {
-    throw new HttpError(400, 'Les noms de champs ne peuvent pas commencer par "$"');
-  }
-  if (partial && keys.length === 0) {
-    throw new HttpError(400, "Aucun champ à modifier");
-  }
-
+  const out: Partial<Movie> = {};
   if (!partial || "title" in body) {
-    if (typeof body.title !== "string" || !body.title.trim()) {
-      throw new HttpError(400, 'Le champ "title" est requis et doit être une chaîne non vide');
+    if (typeof body.title !== "string" || !cleanText(body.title) || body.title.length > MAX.title) {
+      throw new HttpError(400, `Le champ "title" est requis (1 à ${MAX.title} caractères)`);
     }
+    out.title = cleanText(body.title);
   }
-  if ("year" in body && !Number.isInteger(body.year)) {
-    throw new HttpError(400, 'Le champ "year" doit être un entier');
+  if ("year" in body) {
+    if (!Number.isInteger(body.year) || (body.year as number) < 1870 || (body.year as number) > 2100) {
+      throw new HttpError(400, 'Le champ "year" doit être une année entre 1870 et 2100');
+    }
+    out.year = body.year as number;
   }
-  if ("genres" in body && !(Array.isArray(body.genres) && body.genres.every((g) => typeof g === "string"))) {
-    throw new HttpError(400, 'Le champ "genres" doit être un tableau de chaînes');
+  if ("genres" in body) {
+    const g = body.genres;
+    if (!Array.isArray(g) || g.length > MAX.genres || !g.every((x) => typeof x === "string" && cleanText(x) && x.length <= MAX.genre)) {
+      throw new HttpError(400, `Le champ "genres" doit être un tableau de ${MAX.genres} chaînes au plus (${MAX.genre} caractères chacune)`);
+    }
+    out.genres = [...new Set(g.map((x: string) => cleanText(x)))];
   }
-
-  return body as Partial<Movie>;
+  if ("plot" in body) {
+    if (typeof body.plot !== "string" || body.plot.length > MAX.plot) throw new HttpError(400, `Le champ "plot" doit faire ${MAX.plot} caractères au plus`);
+    out.plot = body.plot.replace(/[\p{Cc}\p{Cf}]/gu, (c) => (c === "\n" ? c : "")).trim();
+  }
+  if ("poster" in body) {
+    if (typeof body.poster !== "string" || body.poster.length > MAX.poster || !isHttpsUrl(body.poster)) {
+      throw new HttpError(400, 'Le champ "poster" doit être une adresse https://');
+    }
+    out.poster = body.poster;
+  }
+  return out;
 }
 
 router.get("/", async (req, res) => {
   const page = parsePositiveInt(req.query.page, "page") ?? 1;
+  if (page > 1000) throw new HttpError(400, 'Le paramètre "page" doit être au plus 1000');
   const limit = Math.min(parsePositiveInt(req.query.limit, "limit") ?? DEFAULT_LIMIT, MAX_LIMIT);
   const year = parsePositiveInt(req.query.year, "year");
   const title = parseStringParam(req.query.title, "title");
@@ -131,6 +159,7 @@ router.get("/:id", async (req, res) => {
 });
 
 router.post("/", async (req, res) => {
+  await requireAdmin(req); // lecture publique, écriture réservée aux administrateurs
   const movie = validateMovie(req.body, { partial: false });
   const { insertedId } = await movies().insertOne(movie);
   res
@@ -141,6 +170,7 @@ router.post("/", async (req, res) => {
 
 // Mise à jour partielle : seuls les champs envoyés sont modifiés ($set), les autres sont conservés.
 router.put("/:id", async (req, res) => {
+  await requireAdmin(req); // lecture publique, écriture réservée aux administrateurs
   const _id = parseId(req.params.id);
   const changes = validateMovie(req.body, { partial: true });
   const updated = await movies().findOneAndUpdate({ _id }, { $set: changes }, { returnDocument: "after" });
@@ -149,6 +179,7 @@ router.put("/:id", async (req, res) => {
 });
 
 router.delete("/:id", async (req, res) => {
+  await requireAdmin(req); // lecture publique, écriture réservée aux administrateurs
   const { deletedCount } = await movies().deleteOne({ _id: parseId(req.params.id) });
   if (deletedCount === 0) throw notFound();
   res.status(204).end();

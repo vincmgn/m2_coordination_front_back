@@ -18,9 +18,9 @@ step "Étape 1 : déploiement de la v1"
 scripts/deploy.sh v1 || exit 1
 
 step "Étape 2 : écriture de données pendant que la v1 est en service"
-id=$(curl -sf -X POST -H 'Content-Type: application/json' \
-  -d "{\"title\":\"Film créé avant la v2 ($(date +%H:%M:%S))\",\"year\":2026,\"genres\":[\"Drama\"]}" \
-  "$API_URL/movies" | node -p 'JSON.parse(require("fs").readFileSync(0))._id')
+# Écrit directement en base : la création de film par l'API est réservée aux administrateurs (ADMIN_EMAILS).
+id=$(docker compose exec -T mongo mongosh --quiet sample_mflix --eval \
+  "db.movies.insertOne({ title: 'Film créé avant la v2 ($(date +%H:%M:%S))', year: 2026, genres: ['Drama'] }).insertedId.toHexString()")
 before=$(movie_count)
 echo "Film créé : $id — films en base : $before"
 

@@ -121,6 +121,7 @@ export interface Booking {
   screeningId: string
   seats: string[]
   name: string
+  cancelToken?: string // réservation faite sans compte : seule preuve pour l'annuler (gardée en mémoire, jamais stockée)
 }
 
 export const listScreenings = (movieId: string) => request<Screening[]>(`/screenings?movieId=${movieId}`)
@@ -142,8 +143,12 @@ export const reserveSeats = (id: string, seats: string[], contact: Contact, requ
     headers: measure ? { 'X-AB-Measure': '1' } : {},
   })
 
-export const cancelBooking = (id: string, bookingId: string) =>
-  request<void>(`/screenings/${id}/reservations/${bookingId}`, { method: 'DELETE' })
+// Réservation d'un compte : le cookie de session suffit. Sans compte : le jeton reçu à la réservation.
+export const cancelBooking = (id: string, bookingId: string, cancelToken?: string) =>
+  request<void>(`/screenings/${encodeURIComponent(id)}/reservations/${encodeURIComponent(bookingId)}`, {
+    method: 'DELETE',
+    headers: cancelToken ? { 'X-Cancel-Token': cancelToken } : {},
+  })
 
 // Flux SSE de la séance : URL à passer à EventSource (même préfixe /api que les autres appels).
 export const screeningEventsUrl = (id: string) => `${BASE_URL}/screenings/${id}/events`
@@ -188,6 +193,7 @@ export interface User {
   id: string
   email: string
   name: string
+  admin: boolean // peut créer, modifier et supprimer des films (le back le vérifie à chaque appel)
 }
 
 export const getMe = () => request<User>('/auth/me')
@@ -221,3 +227,23 @@ export interface BookingHistoryEvent {
 
 export const getBookingHistory = (bookingId: string) =>
   request<{ bookingId: string; events: BookingHistoryEvent[] }>(`/screenings/mine/${bookingId}/history`)
+
+// --- Cinémas autour de moi (TP Géolocalisation) ----------------------------------------------------
+// latitude, longitude : position du CINÉMA (adresse publique). distanceKm : à vol d'oiseau, arrondie à 0,1 km,
+// null hors recherche « autour de ». La position du spectateur n'est jamais renvoyée.
+
+export interface Cinema {
+  slug: string
+  name: string
+  address: string
+  city: string
+  features: string[]
+  latitude: number
+  longitude: number
+  distanceKm: number | null
+}
+
+export const FEATURE_LABELS: Record<string, string> = { vo: 'VO', imax: 'IMAX', pmr: 'Accessible PMR' }
+
+// params : nearbyParams(…) de geo.ts (lat, lon arrondis, radiusKm, page, limit, feature), ou page / limit seuls.
+export const listCinemas = (params: URLSearchParams) => request<Paginated<Cinema>>(`/cinemas?${params}`)

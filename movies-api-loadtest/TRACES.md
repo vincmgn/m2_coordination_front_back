@@ -1,6 +1,6 @@
 # TRACES.md — TP OpenTelemetry sur Movies
 
-Ce TP a été adapté de MediSlot à Movies (`movies-api-loadtest` + `movies-web`) : cinéma au lieu du cabinet médical, séance au lieu du créneau, réservation au lieu du rendez-vous. Comme le kit du TP, cette version ajoute une passerelle SMS simulée, un historique des réservations et un compte de démonstration. Avec `TP_TICKETS=1` (valeur par défaut dans `docker-compose.yml`), ces ajouts contiennent les trois défauts des tickets ; avec `TP_TICKETS=0`, le comportement est corrigé.
+Ce TP a été adapté de MediSlot à Movies (`movies-api-loadtest` + `movies-web`) : cinéma au lieu du cabinet médical, séance au lieu du créneau, réservation au lieu du rendez-vous. Comme le kit du TP, cette version ajoute une passerelle SMS simulée, un historique des réservations et un compte de démonstration. Avec `TP_TICKETS=1`, ces ajouts contiennent les trois défauts des tickets ; avec `TP_TICKETS=0`, le comportement est corrigé. Depuis le durcissement de sécurité (voir [`SECURITE.md`](SECURITE.md)), la valeur par défaut est `0` : pour rejouer le TP, lancez `TP_TICKETS=1 docker compose up -d api`.
 
 | | |
 | --- | --- |

@@ -124,7 +124,7 @@ Limites : garde-fous (annulations, 409, temps d'affichage) non mesurés ; les si
 ```bash
 curl -c ab.txt http://localhost:3000/ab/assignment          # affectation (cookie dans ab.txt)
 curl -b ab.txt -X POST http://localhost:3000/ab/exposure     # 204, rejouable sans double comptage
-curl http://localhost:3000/ab/metrics                        # indicateurs
+curl -b session.txt http://localhost:3000/ab/metrics          # indicateurs (compte administrateur, cf. ADMIN_EMAILS)
 ```
 
 Avant un vrai lancement, vider `ab_assignments` (les visites de développement fausseraient la date de départ).
@@ -253,7 +253,11 @@ GIT_SHA=$(git rev-parse --short HEAD) docker compose up -d --build   # service.v
 bash tests/verifier_traces.sh                                        # 3 vérifications : /otlp/, service, propagation
 ```
 
-`TP_TICKETS=1` (valeur par défaut) active les trois défauts du TP : SMS synchrone, N+1 dans « Mes séances », libellé d'historique manquant. Pour avoir le comportement corrigé : `TP_TICKETS=0 docker compose up -d api`. Le diagnostic est dans [`TRACES.md`](TRACES.md).
+`TP_TICKETS=1` active les trois défauts du TP : SMS synchrone, N+1 dans « Mes séances », libellé d'historique manquant. Il recrée aussi le compte de démonstration. La valeur par défaut est `0`, le comportement corrigé ; pour rejouer le TP : `TP_TICKETS=1 docker compose up -d api`. Le diagnostic est dans [`TRACES.md`](TRACES.md).
+
+## Sécurité
+
+L'API et le front sont durcis : sessions, CSRF, droits d'administration, limites de fréquence, en-têtes, conteneurs. Les mesures, la configuration (`APP_SECRET`, `ADMIN_EMAILS`) et les risques restants sont décrits dans [`SECURITE.md`](SECURITE.md).
 
 ## Billet PDF
 
@@ -264,6 +268,17 @@ bash tests/verifier_traces.sh                                        # 3 vérifi
 - **Tests :** `npm test` (node:test, sans base). Le PDF d'exemple est écrit dans `tests/out/billet-exemple.pdf`.
 
 Le contrat, les choix et les preuves sont dans [`CONVOCATION.md`](CONVOCATION.md).
+
+## Cinémas autour de moi (TP Géolocalisation)
+
+`GET /cinemas?lat=&lon=&radiusKm=` renvoie les cinémas à moins de `radiusKm` km (5 par défaut, 20 au plus), du plus proche au plus loin, avec `distanceKm` arrondie à 0,1. Sans `lat` ni `lon`, il renvoie l'annuaire par nom. Filtre `feature` : `vo`, `imax` ou `pmr`.
+
+- **Données :** collection `cinemas`, 11 cinémas fictifs créés au premier démarrage (`src/geo/cinemas-seed.ts`).
+- **Recherche :** par défaut, une boîte englobante indexée, puis haversine ; avec `GEO_FINDER=geonear`, `$geoNear` sur l'index `2dsphere`.
+- **Vie privée :** la position n'est ni journalisée (API, nginx), ni stockée, ni gardée dans les traces.
+- **Tests :** `npm test`. `tests/cinemas-mongo.test.ts` utilise le MongoDB de `movies-db` (port 27018) et est ignoré s'il est arrêté.
+
+Le contrat, les choix et les preuves sont dans [`GEOLOC.md`](GEOLOC.md).
 
 ## Déploiement et rollback (Docker Compose)
 

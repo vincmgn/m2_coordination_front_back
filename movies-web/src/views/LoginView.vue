@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { safeRedirect } from '@/safeRedirect'
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
@@ -14,8 +15,8 @@ const name = ref('')
 const error = ref<string | null>(null)
 const saving = ref(false)
 
-// Retour à la page demandée avant la connexion (chemin interne uniquement).
-const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/') ? route.query.redirect : '/mes-seances'
+// Retour à la page demandée avant la connexion (chemin interne uniquement, cf. safeRedirect).
+const redirect = safeRedirect(route.query.redirect)
 
 async function submit() {
   saving.value = true

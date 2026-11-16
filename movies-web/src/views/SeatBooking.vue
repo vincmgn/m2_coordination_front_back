@@ -292,7 +292,7 @@ function cancelQueued() {
 
 async function cancel() {
   if (!screening.value || !booking.value) return
-  await cancelBooking(screening.value.id, booking.value.bookingId)
+  await cancelBooking(screening.value.id, booking.value.bookingId, booking.value.cancelToken)
   booking.value = null
   notice.value = 'Réservation annulée.'
   reload()

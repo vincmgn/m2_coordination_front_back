@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { getDB } from "../db.js";
 import { HttpError } from "../http-error.js";
+import { requireAdmin } from "./auth.js";
 
 // Test A/B du libellé du bouton de réservation (cours A/B testing, chap. 3).
 //   A (contrôle)    « Réserver »
@@ -87,7 +88,7 @@ router.get("/assignment", async (req: Request, res: Response) => {
     subjectId = randomUUID();
     res.cookie(COOKIE, subjectId, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "strict",
       // Secure exige HTTPS ; en dev l'API est servie en HTTP derrière le proxy Vite.
       secure: process.env.NODE_ENV === "production",
       path: "/",
@@ -185,7 +186,9 @@ function compare(convA: number, nA: number, convB: number, nB: number) {
 }
 
 // GET /ab/metrics : effectifs par variante, puis contrôle SRM, écart, et décision selon la règle de la fiche.
-router.get("/metrics", async (_req: Request, res: Response) => {
+// Réservé aux administrateurs : les résultats d'une expérience en cours ne sont pas publics.
+router.get("/metrics", async (req: Request, res: Response) => {
+  await requireAdmin(req);
   const rows = await assignments()
     .aggregate<{ _id: Variant; assigned: number; exposed: number; converted: number; bookings: number; firstExposure: Date | null }>([
       { $match: { experiment: EXP } },

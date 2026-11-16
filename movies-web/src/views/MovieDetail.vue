@@ -3,10 +3,12 @@ import { ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { deleteMovie, getMovie, type Movie } from '@/api'
 import MoviePoster from '@/components/MoviePoster.vue'
+import { useAuth } from '@/composables/useAuth'
 import ScreeningPicker from '@/components/ScreeningPicker.vue'
 
 const props = defineProps<{ id: string }>()
 const router = useRouter()
+const { user } = useAuth()
 
 const movie = ref<Movie | null>(null)
 const error = ref<string | null>(null)
@@ -90,7 +92,8 @@ const list = (values?: string[]) => values?.filter(Boolean).join(', ')
         </template>
       </dl>
 
-      <div class="actions">
+      <!-- Modifier / Supprimer : comptes administrateurs seulement (le back refuse aussi : 401 / 403). -->
+      <div v-if="user?.admin" class="actions">
         <RouterLink :to="`/movies/${movie._id}/edit`" class="btn">Modifier</RouterLink>
         <button class="btn btn-danger" :disabled="deleting" @click="remove">
           {{ deleting ? 'Suppression…' : 'Supprimer' }}

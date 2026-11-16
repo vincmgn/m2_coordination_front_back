@@ -40,8 +40,20 @@ services:
       OTEL_NODE_ENABLED_INSTRUMENTATIONS: http,undici,express,mongodb # undici = fetch sortant ; dns, net, fs… : du bruit
       OTEL_SEMCONV_STABILITY_OPT_IN: http # url.path et url.query séparés : le collecteur peut supprimer la requête seule
       # --- TP OpenTelemetry : les trois tickets (passerelle SMS, « Mes séances », historique). "0" : comportement corrigé ---
-      TP_TICKETS: ${TP_TICKETS:-1}
+      # Défaut 0 (sécurité) : TP_TICKETS=1 recrée aussi le compte de démonstration au mot de passe publié.
+      TP_TICKETS: ${TP_TICKETS:-0}
       SMS_GATEWAY_URL: http://sms-passerelle:4000
+      # --- Sécurité : à définir dans .env (jamais dans le dépôt) ---
+      APP_SECRET: ${APP_SECRET:-}       # 32 caractères au moins : signe les jetons d'annulation des réservations sans compte
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}   # comptes autorisés à créer, modifier et supprimer des films (aucun par défaut)
+    # Conteneur durci : système de fichiers en lecture seule, aucun privilège Linux, pas d'élévation.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 200
+    mem_limit: 512m
     ports:
       - "127.0.0.1:8080:3000" # 8080 pour ne pas gêner `npm run dev` (3000)
     depends_on:
@@ -61,6 +73,12 @@ services:
     container_name: movies-web
     ports:
       - "127.0.0.1:8081:80"
+    # nginx : le processus maître démarre en root pour écouter le port 80 puis passe ses workers sur l'utilisateur nginx.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 100
+    mem_limit: 128m
     depends_on:
       api:
         condition: service_healthy
